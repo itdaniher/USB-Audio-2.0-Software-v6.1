@@ -1,0 +1,193 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>S/PDIF Transmit &mdash; S/PDIF Software Component v documentation</title>
+
+    <link rel="stylesheet" href=".static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href=".static/framework.css"  type="text/css" />
+    <!--[if lt IE 9]>
+      <link rel="stylesheet" href=".static/xde-ie.css"  type="text/css" />
+    <![endif]-->
+    <!--[if lt IE 8]>
+    <link rel="stylesheet" href=".static/xde-ie7.css"  type="text/css" />
+    <![endif]-->
+    <link rel="stylesheet" href=".static/xde.css"
+    type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src=".static/jquery.js"></script>
+    <script type="text/javascript" src=".static/underscore.js"></script>
+    <script type="text/javascript" src=".static/doctools.js"></script>
+    <link rel="top" title="S/PDIF Software Component v documentation" href="index.html" />
+    <link rel="prev" title="S/PDIF Receive" href="page1.html" /> 
+  </head>
+  <body class="indented-content" onload="prepareContents();">
+    <div id="menubar">
+    <div id="breadcrumbs">
+      <ul>
+        
+
+<!--        <li><a href="index.html">S/PDIF Software Component</a></li>-->
+          <li>S/PDIF Transmit</li> 
+      </ul>
+    </div>
+    </div>  
+          <div id="body">
+             <div id="content">
+             <h1>S/PDIF Transmit</h1>
+
+             <div class='content'>
+            
+  <p>This module is a single thread that receives samples over a channel and that
+outputs data on the port.</p>
+<p>The S/PDIF transmit module require a one-bit buffered output port (with transfer width of 32), a clock block,
+and a master clock coming in on an unbuffered one-bit port.</p>
+<h2 class="topic" id="api">API</h2>
+<div><p>Call SpdifTransmitPortConfig to set up the clock then SpdifTransmit to output data.</p>
+<ul class='lib'><li class="function">
+<h2 id="SpdifTransmitPortConfig">
+void <tt class="descname">SpdifTransmitPortConfig</tt><big>(</big>out buffered port:32<em>&nbsp;p</em>, clock<em>&nbsp;cl</em>, in port<em>&nbsp;p_mclk</em><big>)</big></h2>
+<p>Configure out port to be clocked by clock block, driven from master clock input.</p>
+<p>Must be called before <a class="reference" href="#SpdifTransmit" title="SpdifTransmit"><span>SpdifTransmit()</span></a></p>
+This function has the following parameters:<ul class="latex_compact"><li><h2>p</h2>
+<p>S/PDIF tx port</p>
+</li>
+<li><h2>cl</h2>
+<p>Clock block to be used</p>
+</li>
+<li><h2>p_mclk</h2>
+<p>Master-clock input port</p>
+</li>
+</ul>
+</div></li>
+
+<li class="function">
+<h2 id="SpdifTransmit">
+void <tt class="descname">SpdifTransmit</tt><big>(</big>buffered out port:32<em>&nbsp;p</em>, chanend<em>&nbsp;c</em><big>)</big></h2>
+<p>Function expects a buffered single bit port clock from the master clock.</p>
+<p>All channel communication is done via builtins (e.g. outuint, outct etc.)</p>
+<p>On startup expects two words over the channel:</p>
+<ol class="arabic simple">
+<li>Desired sample frequency (in Hz)</li>
+<li>Master clock frequency (in Hz)</li>
+</ol>
+<p>Then sample pairs:</p>
+<ol class="arabic simple">
+<li>Left sample</li>
+<li>Right sample</li>
+</ol>
+<p>The data format is 24-bit signed left aligned in a 32-bit word.</p>
+<p>If a XS1_CT_END token is received, the thread stops and waits for new sample/master freq pair</p>
+This function has the following parameters:<ul class="latex_compact"><li><h2>p</h2>
+<p>S/PDIF tx port</p>
+</li>
+<li><h2>c</h2>
+<p>Channel-end for sample freq and samples</p>
+</li>
+</ul>
+</div></li>
+
+</ul></div><h2 class="topic" id="example">Example</h2>
+<div><p>This example generates a triangle sound wave on the SPDIF interface from a USB Audio 2.0 multichannel interface board. On this board the master clock input is from a PLL. The program is shown below (excluding code to set up the PLL on the board).</p>
+<p>An output port, a master-clock input port and a clock block must be declared:</p>
+<pre>
+#include &lt;xs1.h&gt;
+#include &lt;platform.h&gt;
+#include "SpdifTransmit.h"
+
+#define SAMPLE_FREQUENCY_HZ 96000
+#define MASTER_CLOCK_FREQUENCY_HZ 12288000
+
+on stdcore[1] : buffered out port:32 oneBitPort = XS1_PORT_1K;
+on stdcore[1] : in port masterClockPort = XS1_PORT_1L;
+on stdcore[1] : clock clockblock = XS1_CLKBLK_1;
+
+</pre>
+<p>In this example transmitSpdif sets up the clock and starts the transmit function to receive on a chanend.</p>
+<pre>
+void transmitSpdif(chanend c) {
+    SpdifTransmitPortConfig(oneBitPort, clockblock, masterClockPort);
+    SpdifTransmit(oneBitPort, c);
+}
+
+</pre>
+<p>The generate function sends configuration settings over a channel then a triangle wave.</p>
+<pre>
+#define WAVE_LEN 512
+void generate(chanend c) {
+    int i = 0;
+    outuint(c, SAMPLE_FREQUENCY_HZ);
+    outuint(c, MASTER_CLOCK_FREQUENCY_HZ);
+    while(1) {
+       // Generate a triangle wave
+       int sample = i;
+       if (i &gt; (WAVE_LEN / 4)) {
+          // After the first quarter of the cycle
+          sample = (WAVE_LEN / 2) - i;
+       }
+       if (i &gt; (3 * WAVE_LEN / 4)) {
+          // In the last quarter of the cycle
+          sample = i - WAVE_LEN;
+       }
+       sample &lt;&lt;= 23; // Shift to highest but 1 bits
+       outuint(c, sample); // Left channel
+       outuint(c, sample); // Right channel
+
+       i++;
+       i %= WAVE_LEN;
+    }
+    //outct(c, XS1_CT_END); // to stop SpdifTransmit thread
+}
+
+</pre>
+<dl class="docutils">
+<dt>The example starts by setting up the PLL on the board. Then it creates 3 threads:</dt>
+<dd><ul class="first last">
+<li>S/PDIF transmit</li>
+<li>the data generator</li>
+<li>clock generator for the PLL</li>
+</ul>
+</dd>
+</dl>
+<p>An XC channel connects the generator and the transmit thread.</p>
+<pre>
+void example(void) {
+   chan c;
+   setupPll();
+   par {
+      transmitSpdif(c);
+      generate(c);
+      clockGen();
+   }
+}
+
+int main(void) {
+   par {
+      on stdcore[1]: example();
+   }
+   return 0;
+}
+
+</pre>
+</div>
+
+             </div>
+             </div>
+          </div>
+    <div class="footer">
+    </div>
+  </script>
+  </body>
+</html>

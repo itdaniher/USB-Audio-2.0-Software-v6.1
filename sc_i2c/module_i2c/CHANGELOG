@@ -1,0 +1,10 @@
+XMOS I2C COMPONENT
+------------------
+
+25th Feb 2009 - 1v1
+
+  * Move to new build system
+
+10th Dec - 1.0
+
+   * Initial version

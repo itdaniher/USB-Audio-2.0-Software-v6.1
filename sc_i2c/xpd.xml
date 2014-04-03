@@ -1,0 +1,33 @@
+<?xml version="1.0" ?>
+<xpd>
+    <components></components>
+    <dependency repo = "xcommon">
+        <githash>b7b5be59795a0a4b3fee4aeaff3c8e398bf76d27</githash>
+        <uri>ssh://git@github.com/xcore/xcommon</uri>
+        <version>1.0.0rc2</version>
+    </dependency>
+    <description>I2C Software Component</description>
+    <docdir>doc</docdir>
+    <exclude_dir>app_xdk_xai_i2c_test</exclude_dir>
+    <location>ssh://git@github.com/xcore/sc_i2c</location>
+    <name>sc_i2c</name>
+    <maintainer>djpwilk</maintainer>
+    <partnumber>XM-001649-DH</partnumber>
+    <release parenthash = "c5638337ac2838336d2a02bfc7633d928e46536c" version = "2.0.0beta0" githash = "045a0e4d4a19484016300c1f635258b5d11dce0f"></release>
+    <release parenthash = "bcc4482ec1a8e158d6321aa8f1bfdc7a213bb035" version = "2.0.0rc0" githash = "2ec286798c37e34a3130eb1b23471bf42ff6b2af"></release>
+    <release parenthash = "459b3f4fe52124960c2d42b1932f204c3161d425" version = "2.0.0rc1" githash = "b89c5045029d8e8d7ef4a4ce6f94eb6791ea2735"></release>
+    <release parenthash = "d8dff135311c6732ac3fa4a0081319fd5f4cebb2" version = "2.0.0rc2" githash = "3c44407c1a443919992568c0380e1661ffb9c3be"></release>
+    <release parenthash = "ef93cc1de5143be8f5dc92e399c340c735a23cec" version = "2.0.0rc3" githash = "86cb497a5ee519fbc0c4bb597adeeb135d3e97e1"></release>
+    <release parenthash = "c8d766c249d1b13cdbf7a8140d613a143e62504e" version = "2.1.0alpha0" githash = "2109b9294da0af5872e8c596c80f8bba3d539559"></release>
+    <release parenthash = "30b00a5e403978a1a7fc4300bd7b311a36ac7a27" version = "2.1.0alpha1" githash = "ca4402ef45d14bff260c4230950cfc4d30fc801e"></release>
+    <release parenthash = "bd763c072a9b94aa2c25beaf0e21392e3ae4b0d7" version = "2.1.0alpha2" githash = "92f2253e2d293affcdf73bf3b6dcb8ba50c0fc4c"></release>
+    <release parenthash = "d601914195b277b46db88ffa1918dc27267fa992" version = "2.1.0alpha3" githash = "407932265db62de56c8454c91235e7fc13366d9d"></release>
+    <release parenthash = "407932265db62de56c8454c91235e7fc13366d9d" version = "2.1.0alpha4" githash = "d737fe8dfca97a51fcdafc32ae01278761515aca"></release>
+    <release parenthash = "e579e47c35b311302406bf7e8c9965390ee313d2" version = "2.1.0alpha5" githash = "31455b694241b99784120e0b2dc95b67d56eca0e"></release>
+    <release parenthash = "31455b694241b99784120e0b2dc95b67d56eca0e" version = "2.1.0rc0" githash = "576de5f72f10954ce0eed83acb418890ed636bb8"></release>
+    <subpartnumber>XM-000072-SW</subpartnumber>
+    <vendor>XMOS</vendor>
+    <xpd_version>1.0</xpd_version>
+    <scope>example</scope>
+    <version>35a77a7dfd5cb5a4c39f35fef721fcd1ea42a45b</version>
+</xpd>

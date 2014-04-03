@@ -1,0 +1,179 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>SPDIF software &mdash; S/PDIF Software Component v documentation</title>
+
+    <link rel="stylesheet" href=".static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href=".static/framework.css"  type="text/css" />
+    <!--[if lt IE 9]>
+      <link rel="stylesheet" href=".static/xde-ie.css"  type="text/css" />
+    <![endif]-->
+    <!--[if lt IE 8]>
+    <link rel="stylesheet" href=".static/xde-ie7.css"  type="text/css" />
+    <![endif]-->
+    <link rel="stylesheet" href=".static/xde.css"
+    type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src=".static/jquery.js"></script>
+    <script type="text/javascript" src=".static/underscore.js"></script>
+    <script type="text/javascript" src=".static/doctools.js"></script>
+    <link rel="top" title="S/PDIF Software Component v documentation" href="index.html" />
+    <link rel="next" title="S/PDIF Receive" href="page1.html" />
+    <link rel="prev" title="S/PDIF Software Component" href="index.html" /> 
+  </head>
+  <body class="indented-content" onload="prepareContents();">
+    <div id="menubar">
+    <div id="breadcrumbs">
+      <ul>
+        
+
+<!--        <li><a href="index.html">S/PDIF Software Component</a></li>-->
+          <li>SPDIF software</li> 
+      </ul>
+    </div>
+    </div>  
+          <div id="body">
+             <div id="content">
+             <h1>SPDIF software</h1>
+
+             <div class='content'>
+            
+  <p>S/PDIF, or Sony/Philips Digital Interface is a protocol to transmit audio
+data over either coaxial or optical cables. The data transmission rate is
+determined by the transmitter, and the receiver has to recover the sample
+rate.</p>
+<p>Important characteristics of S/PDIF software are the following:</p>
+<ul>
+<li>The number of audio channels: 2 (Stereo)</li>
+<li>The sample rate(s) supported. Typical values are 44.1, 48, 96, and 192
+Khz. Some systems require only a single frequency to be supported, others
+need to support all frequencies and need to auto-detect the frequency.</li>
+<li>Transmit and Receive support. Some systems require only S/PDIF output, or
+only S/PDIF input. Others require both.</li>
+</ul>
+<h2 class="topic" id="module-spdif-tx">module_spdif_tx</h2>
+<div><p>This module can transmit S/PDIF signals at the following rates
+(assuming a 50 MIPS thread):</p>
+<table border="1" class="docutils">
+<colgroup>
+<col width="14%" />
+<col width="22%" />
+<col width="17%" />
+<col width="14%" />
+<col width="33%" />
+</colgroup>
+<thead valign="bottom">
+<tr><th class="head" colspan="2"><p>Functionality provided Channels</p>
+</th>
+<th class="head" colspan="2"><p>Resources required Sample Rate</p>
+</th>
+<th class="head" rowspan="2"><p>Status 1-bit port</p>
+</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr><td><p>2</p>
+</td>
+<td><p>up to 192 KHz</p>
+</td>
+<td><p>1-2</p>
+</td>
+<td><p>3.5 KB</p>
+</td>
+<td><p>Implemented and tested</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p>It requires a single thread to run the transmit code. The number of 1-bit
+ports depends on whether the master clock is already available on a one-bit
+port. If available, then only a single 1-bit port is required to output
+S/PDIF. If not, then two ports are required, one for the signal output, and
+one for the master-clock input.</p>
+<p>The jitter on the output-pin is within tolerances allowed by the spec
+provided a 500 MHz part is used. It is recommended to use an
+external flip-flop to resynchronise the data signal to the master-clock,
+which will eliminate the remaining jitter on the S/PDIF edges.</p>
+<p>The precise transmission frequencies supported depend on the availability
+of an external clock (eg, a PLL or a crystal oscillator) that runs at a
+frequency of:</p>
+<pre class="snip-single-inline">
+channels * sampleRate * 64
+</pre>
+<p>or a power-of-2 multiple. For example, for 2 channels at 192 Khz the
+external clock has to run at a frequency of 24.576 MHz. This same frequency
+also supports 2 channels at 48 KHz (which requires a minimum frequency of
+6.144 MHz). If both 44,1 and 48 Khz frequencies are to be supported, both a
+24.576 MHz and a 22.579 MHz master clock is required. This is normally not
+an issue since the same clocks can be used to drive the audio codecs.</p>
+<p>Typical applications for this module include iPod docks, digital microphones,
+digital mixing desks, USB audio, and AVB.</p>
+</div><h2 class="topic" id="module-spdif-rx">module_spdif_rx</h2>
+<div><p>This module can receive S/PDIF signals at three different rates. It
+automatically adjusts to the incoming rate, but for high rates a fast
+thread is required. The thread will fail silently if it does not have
+enough MIPS to parse the input stream.</p>
+<p>The S/PDIF receiver is generated from a state machine description. The
+generated code requires a one bit buffered input port (transfer width of
+4), and a clock block to work.</p>
+<table border="1" class="docutils">
+<colgroup>
+<col width="12%" />
+<col width="19%" />
+<col width="14%" />
+<col width="10%" />
+<col width="17%" />
+<col width="29%" />
+</colgroup>
+<thead valign="bottom">
+<tr><th class="head" colspan="2"><p>Functionality provided Channels</p>
+</th>
+<th class="head" colspan="3"><p>Resources required Sample Rate</p>
+</th>
+<th class="head" rowspan="2"><p>Status 1-bit port</p>
+</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr><td><p>2</p>
+</td>
+<td><p>up to 192 KHz</p>
+</td>
+<td><p>1</p>
+</td>
+<td><p>3 KB</p>
+</td>
+<td><p>80 MIPS</p>
+</td>
+<td><p>Implemented and tested</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p>The receiver does not require any external clock, but can only recover
+44.1, 48, 88.2, 96, and 192 KHz sample rates.</p>
+<p>Typical applications for this module include digital speakers,
+digital mixing desks, USB audio, and AVB.</p>
+</div>
+
+             </div>
+             </div>
+          </div>
+    <div class="footer">
+    </div>
+  </script>
+  </body>
+</html>

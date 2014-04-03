@@ -1,0 +1,23 @@
+.align 4
+L1_S:
+.syntax default
+  bf r6, L1_0
+.syntax architectural
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 ERROR
+  BLRF_u10 L000_TZ
+  BLRB_u10 ERROR
+  BLRF_u10 L11100_S
+  BLRB_u10 ERROR
+  BLRB_u10 ERROR
+  BLRB_u10 ERROR
+  BLRF_u10 L0_TY
+  BLRF_u10 L1_UZ
+  BLRF_u10 L1_UZ
+  BLRB_u10 ERROR
+  BLRF_u10 L1_UZ
+  BLRF_u10 L11_UZ
+  BLRF_u10 L11_UZ
+  BLRB_u10 ERROR
+  BLRF_u10 L11111_S

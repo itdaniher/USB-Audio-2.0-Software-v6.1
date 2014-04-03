@@ -1,0 +1,32 @@
+.align 4
+L111_Y:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L111
+.align 4
+L111_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L111
+.align 4
+L111_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L111:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000_0
+  BLRF_u10 L000_0
+  BLRB_u10 FASTER
+  BLRB_u10 L00_S
+  BLRF_u10 L10_1
+  BLRF_u10 ERROR
+  BLRB_u10 L110_1
+  BLRF_u10 L0_S
+  BLRB_u10 L0001_0
+  BLRF_u10 L001_0
+  BLRB_u10 FASTER
+  BLRF_u10 L01_0
+  BLRF_u10 L11_1
+  BLRB_u10 L011_0
+  BLRB_u10 L111_1
+  BLRF_u10 L1111111

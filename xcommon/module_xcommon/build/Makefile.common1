@@ -1,0 +1,885 @@
+###########################################################
+# COMMON MAKEFILE FOR BUILDING XMOS/XCORE CODE REPOSITORIES
+#
+# Include this makefile *after* defining the following variables
+#
+# BASE_DIR = home directory of project (i.e. where the bin/ and src/ directories are)
+#
+# TARGET = target board/device
+#
+# SOURCE_DIRS = directories under the src/ directory containing source to compiler
+# INCLUDE_DIRS = directories under the src/ direcotry containing header files
+#
+# LIB_DIRS = directories under the src directory containing libraries
+#
+# SOURCE_FILES_[binary] = source files specific to a particular binary
+#
+# EXCLUDE_FILES = list of files to exclude from the build (just the file names - no path needed)
+#
+# XCC_FLAGS = flags for xcc
+#
+# XCC_FLAGS_[source_file] = flags for a specific source file (will
+#                           overide XCC_FLAGS)
+#
+# BUILD_NAME = The name of the build. This affects where binaries and libraries
+#               are put under bin/ and lib/ and the
+#               directory under current directory that the intermediate build
+#               files are kept in. . Defaults to $(TARGET).
+#
+##########################################
+_COMMON1:=1
+export _COMMON1
+-include Makefile
+_COMMON1:=0
+ifeq ($(EXTRA_INCLUDE),)
+else
+ifneq ($(LIBRARY),)
+GEN_DIR=.build_$(LIBRARY)/generated
+endif
+-include $(EXTRA_INCLUDE)
+endif
+
+BASE_DIR ?= .
+VERBOSE ?= 0
+AUTO_ECLIPSE ?= 1
+
+export VERBOSE
+
+ifneq ($(DISABLE_WALL),1)
+XCC_FLAGS += -Wall
+endif
+
+# Find the xcommon build directory
+MAKEFILE_LIST1 := $(foreach x, $(MAKEFILE_LIST), $(if $(wildcard $x),$x,$(CHAR1)$x$(CHAR1)))
+MAKEFILE_LIST2 := $(subst $(CHAR1),,$(subst $(CHAR1)  $(CHAR1),$(CHAR2),$(MAKEFILE_LIST1)))
+
+XCOMMON_MAKEFILE := $(subst $(CHAR2),\ ,$(filter %Makefile.common1,$(MAKEFILE_LIST2)))
+
+MODULE_XCOMMON_DIR := $(subst /build/../build/..,,$(patsubst %/Makefile.common1,%,$(XCOMMON_MAKEFILE))/..)
+
+XCOMMON_DIR := $(MODULE_XCOMMON_DIR)/..
+
+
+include $(MODULE_XCOMMON_DIR)/build/Makefile.file_handling
+
+TARGET:=$(call UNESCAPE_SPACES,$(TARGET))
+
+# Define some generic OS functions
+ifeq ($(OS),WINDOWS)
+WINFLAG=1
+else
+ifeq ($(findstring Windows, $(OS)),Windows)
+WINFLAG=1
+else
+WINFLAG=0
+endif
+endif
+
+
+
+FIXDEP = $(patsubst %.xc.d,%.d,$(patsubst %.c.d,%.d,$(patsubst %.cpp.d,%.d,$(patsubst %.s.d,%.d,$1))))
+
+ifeq ($(WINFLAG),1)
+PATHSEP=;
+CP=copy $(subst /,\,$(1))
+XCP=xcopy $(subst /,\,$(1))
+MV=move /Y $(subst /,\,$(1))
+RM=cmd /c if exist "$(subst /,\,$(1))" del /Q /F "$(subst /,\,$(1))"
+RMRF=cmd /c if exist "$(subst /,\,$(1))" RMDIR /S /Q "$(subst /,\,$(1))"
+MKDIR="$(subst /,\,$(subst \ , ,$(MODULE_XCOMMON_DIR)))/build/mkdir.bat" $(subst /, ,$(1)) 2> nul
+NULL=nul
+CAT=type
+OS=WINDOWS
+SHELL=$(windir)\system32\cmd.exe
+TO_OS=$(subst /,\,$(1))
+AUTO_PROJ = $(call TO_OS,$(subst \ , ,$(XCOMMON_DIR))/auto_proj/bin/auto_proj.exe)
+CHANGEDEP = "$(call TO_OS,$(subst \ , ,$(MODULE_XCOMMON_DIR))/build/changedep.exe)" "$(call TO_OS,$(TARGET_DIR)/$(call FIXDEP,$(notdir $1)))" "$1 $(call TO_BUILD_DIR,$(call TO_OBJ, $2))" " ../" " ././" " ./../" " ./" > $1 & $(call RM, $(TARGET_DIR)/$(call FIXDEP,$(notdir $1)))
+else
+PATHSEP=:
+CP=cp $(1)
+XCP=cp -r $(1)
+MV=mv $(1)
+RM=rm -f $(1)
+RMRF=rm -rf $(1)
+MKDIR=mkdir -p $(1)
+NULL=/dev/null
+CAT=cat
+TO_OS=$(1)
+AUTO_PROJ = $(call TO_OS,$(subst \ , ,$(XCOMMON_DIR))/auto_proj/bin/auto_proj)
+CHANGEDEP = sed -e 's/\(\/[^.\\]*\) /\1\\ /g' -e 's/\(\/[^.\\]*\) /\1\\ /g' -e 's/\(\/[^.\\]*\) /\1\\ /g' -e 's/\(\/[^.\\]*\) /\1\\ /g' -e 's/\(\/[^.\\]*\) /\1\\ /g'   -e "s/ \.\.\// \.\//g" -e "s/$(subst /,\/,$(abspath ../..)/)/..\/..\//g"  -e "s/.*:/$(subst /,\/,$1 $(call TO_BUILD_DIR,$(call TO_OBJ, $2))):/g" "$(TARGET_DIR)/$(call FIXDEP,$(call UNMANGLE_NO_ESCAPE,$(notdir $1)))" > $1;$(call RM, $(TARGET_DIR)/$(call FIXDEP,$(notdir $1)))
+endif
+
+.SUFFIXES:
+
+# Jython
+# This is a bit of a hack since the jython interpreter is contained in the xta
+JYTHON = echo "source $1">$(TARGET_DIR)/tmp.xta;echo "exit" >> $(TARGET_DIR)/tmp.xta;xta source $(TARGET_DIR)/tmp.xta
+
+# General utility function
+
+IS_DIR = $(wildcard $(call UNMANGLE,$1)/*)
+
+KEEP_IF_DIR = $(if $(call IS_DIR,$1),$1,)
+
+SEARCH_DIR := $(BASE_DIR)/../..
+
+
+MAKEFILE_COMMON = $(filter %module_xcommon/build/Makefile.common,$(MAKEFILE_LIST))xs
+
+MAKEFILE_COMMON_DIR = $(patsubst %/build/Makefile.common,%,$(MAKEFILE_COMMON))
+
+PARENT_DIRNAME = $(notdir $(abspath ..))
+
+IS_REPO = $(filter sc_% sw_% ap_% tool_%,$(notdir $(abspath $(1))))$(wildcard $1/.cproject)$(wildcard $1/xpd.xml)$(wildcard $1/.git)
+
+TWO_LEVEL = $(if $(call IS_REPO,..),1,)
+
+ifeq ($(TWO_LEVEL),)
+SEARCH_DIR := $(BASE_DIR)/..
+endif
+
+
+XMOS_MODULE_PATH := $(subst \ , ,$(XMOS_MODULE_PATH))
+XMOS_MODULE_PATH := $(subst \,/,$(XMOS_MODULE_PATH))
+XMOS_MODULE_PATH := $(subst ",,$(XMOS_MODULE_PATH))
+XMOS_MODULE_PATH := $(strip $(XMOS_MODULE_PATH)$(PATHSEP)$(strip $(SEARCH_DIR)))
+
+XMOS_MODULE_PATH := $(subst ;, ,$(call MANGLE,$(subst $(PATHSEP),;,$(XMOS_MODULE_PATH))))
+
+CANDIDATE_MODULES_FOR_PATH = $(1) $(foreach x,$(call WILDCARD,$(1)/*),$(call KEEP_IF_DIR,$x)) $(foreach x,$(call WILDCARD,$(1)/*),$(foreach y,$(call WILDCARD,$x/*),$(call KEEP_IF_DIR,$y)))
+
+CANDIDATE_MODULES = $(foreach x,$(XMOS_MODULE_PATH),$(call CANDIDATE_MODULES_FOR_PATH,$x))
+
+CANDIDATE_MODULES := $(foreach x,$(CANDIDATE_MODULES),$(call MANGLE,$(abspath $x)))
+CANDIDATE_MODULES := $(sort $(CANDIDATE_MODULES))
+
+
+NON_EXPLORED_DIRS ?=
+NON_EXPLORED_DIRS += %archive %.git %CVS %.svn %export
+
+GET_ALL_SUBDIRS = $1 $(foreach x,$(filter-out $(NON_EXPLORED_DIRS), $(call WILDCARD,$1/*)),$(if $(call IS_DIR, $x), $(call GET_ALL_SUBDIRS, $x),))
+
+EXPAND_DIR = $(if $(filter %*,$1), $(call GET_ALL_SUBDIRS,$(subst *,.,$(patsubst %/*,%,$1))),$1)
+
+GET_C_FILES = $(foreach x, $(foreach y,$(1), $(call EXPAND_DIR,$(if $(CURRENT_MODULE_DIR),$(CURRENT_MODULE_DIR)/,)$y)), $(call WILDCARD,$x/*.c))
+GET_CPP_FILES = $(foreach x, $(foreach y, $(1), $(call EXPAND_DIR,$(if $(CURRENT_MODULE_DIR),$(CURRENT_MODULE_DIR)/,)/$y)), $(call WILDCARD,$x/*.cpp))
+GET_XC_FILES = $(foreach x, $(foreach y, $(1), $(call EXPAND_DIR,$(if $(CURRENT_MODULE_DIR),$(CURRENT_MODULE_DIR)/,)$y)), $(call WILDCARD,$x/*.xc))
+GET_ASM_FILES = $(foreach x, $(foreach y, $(1), $(call EXPAND_DIR,$(if $(CURRENT_MODULE_DIR),$(CURRENT_MODULE_DIR)/,)$y)), $(call WILDCARD,$x/*.s)) $(foreach x, $(foreach y, $(1), $(call EXPAND_DIR,$(if $(CURRENT_MODULE_DIR),$(CURRENT_MODULE_DIR)/,)$y)), $(call WILDCARD,$x/*.S))
+GET_ALL_FILES = $(call GET_C_FILES, $1) $(call GET_XC_FILES, $1) $(call GET_ASM_FILES, $1)
+
+
+SET_XCC_FLAGS = $(foreach z, $(call GET_ALL_FILES, $1), $(if $(XCC_FLAGS_$z),,$(eval XCC_FLAGS_$z = $2)))
+SET_XCC_C_FLAGS = $(foreach z, $(call GET_C_FILES, $1), $(if $(XCC_FLAGS_$z),,$(eval XCC_FLAGS_$z = $2)))
+SET_XCC_CPP_FLAGS = $(foreach z, $(call GET_CPP_FILES, $1), $(if $(XCC_FLAGS_$z),,$(eval XCC_FLAGS_$z = $2)))
+SET_XCC_XC_FLAGS = $(foreach z, $(call GET_XC_FILES, $1), $(if $(XCC_FLAGS_$z),,$(eval XCC_FLAGS_$z = $2)))
+SET_XCC_ASM_FLAGS = $(foreach z, $(call GET_ASM_FILES, $1), $(if $(XCC_FLAGS_$z),,$(eval XCC_FLAGS_$z = $2)))
+
+
+
+
+TO_OBJ = $(patsubst %.cpp,%.cpp.o,$(patsubst %.S,%.s.o,$(patsubst %.xc,%.xc.o,$(patsubst %.c,%.c.o,$(patsubst %.s,%.s.o,$(1))))))
+
+TO_DEP = $(patsubst %.cpp,%.cpp.d,$(patsubst %.S,%.s.d,$(patsubst %.xc,%.xc.d,$(patsubst %.c,%.c.d,$(patsubst %.s,%.s.d,$(1))))))
+
+ifeq ($(SRC_PREFIX),1)
+MY_SRCDIR = $(BASE_DIR)/src
+else
+MY_SRCDIR = $(BASE_DIR)
+endif
+ifeq ($(BUILDING_LIBRARY),)
+UM := $(call HANDLE_QUOTES, $(USED_MODULES))
+else
+UM :=
+endif
+
+FIND_MODULE = $(BASE_DIR)/../$(filter $1%,$(UM))
+
+IS_MODULE_DIR = $(filter %::,$(subst ::,:: ,$1))
+GET_MODULE_DIR = $(call FIND_MODULE,$(word 1,$(subst ::, ,$1)))/$(word 2,$(subst ::, ,$1))
+
+
+REMOVE_MODULE_VERSION = $(if $(findstring .,$1),$(strip $(subst .,,$(firstword $(subst .,. ,$1)))),$1)
+GET_MODULE_VERSION = $(if $(findstring .,$1),$(strip $(patsubst $(call REMOVE_MODULE_VERSION,$1).%,%,$1)),)
+
+SEARCH_FOR_MODULE = $(strip $(filter %$1,$(CANDIDATE_MODULES)))
+
+GET_VERSIONED_MODULE_DIR = $(call SEARCH_FOR_MODULE,$(strip $1))
+GET_ARCHIVED_MODULE_NAME = $(call REMOVE_MODULE_VERSION,$1)/archive/$(call GET_MODULE_VERSION,$1)
+GET_ARCHIVED_MODULE_DIR = $(call SEARCH_FOR_MODULE,$(GET_ARCHIVED_MODULE_NAME))
+DIR_EXISTS = $(if $(strip $1),$(strip $(call WILDCARD,$1/*)),)
+
+GET_MODULE_NAME = \
+$(if $(call DIR_EXISTS, $(call GET_VERSIONED_MODULE_DIR,$1)),\
+$1,\
+$(if $(call DIR_EXISTS, $(call GET_ARCHIVED_MODULE_DIR,$1)),\
+$(call GET_ARCHIVED_MODULE_NAME,$1),\
+$(call REMOVE_MODULE_VERSION,$1)))
+
+
+
+
+SRCDIR = $(if $(call IS_MODULE_DIR,$1),$(call GET_MODULE_DIR,$1),$(MY_SRCDIR)/$1)
+
+TARGET := $(patsubst %.xn,%,$(TARGET))
+
+# Work out the directories and file lists
+APP_NAME ?= $(subst .,_,$(notdir $(lastword $(abspath .))))
+
+ifeq ($(strip $(TARGET)$(BUILDING_LIBRARY)),)
+$(error No TARGET specified in application Makefile)
+endif
+
+ifeq ($(strip $(APP_NAME)),)
+APP_NAME := $(subst .,_,$(notdir $(lastword $(abspath .))))
+endif
+
+ifneq ($(strip $(APP_NAME0)),)
+APP_NAME := $(APP_NAME0)
+endif
+
+ifeq ($(BUILDING_LIBRARY),)
+CONFIG ?= Default
+else
+CONFIG := $(LIBRARY)
+endif
+
+ifeq ($(CONFIG),Default)
+XCC_C_FLAGS ?= $(XCC_FLAGS)
+XCC_CPP_FLAGS ?= $(XCC_FLAGS)
+XCC_XC_FLAGS ?= $(XCC_FLAGS)
+XCC_ASM_FLAGS ?= $(XCC_FLAGS)
+XCC_MAP_FLAGS ?= $(XCC_FLAGS)
+else
+ifeq ($(BUILDING_LIBRARY),)
+
+XCC_C_FLAGS_$(CONFIG) ?= $(XCC_FLAGS_$(CONFIG))
+XCC_CPP_FLAGS_$(CONFIG) ?= $(XCC_FLAGS_$(CONFIG))
+XCC_XC_FLAGS_$(CONFIG) ?= $(XCC_FLAGS_$(CONFIG))
+XCC_ASM_FLAGS_$(CONFIG) ?= $(XCC_FLAGS_$(CONFIG))
+XCC_MAP_FLAGS_$(CONFIG) ?= $(XCC_FLAGS_$(CONFIG))
+
+XCC_FLAGS     := $(XCC_FLAGS_$(CONFIG))
+XCC_XC_FLAGS  := $(XCC_XC_FLAGS_$(CONFIG))
+XCC_C_FLAGS   := $(XCC_C_FLAGS_$(CONFIG))
+XCC_CPP_FLAGS := $(XCC_CPP_FLAGS_$(CONFIG))
+XCC_ASM_FLAGS := $(XCC_ASM_FLAGS_$(CONFIG))
+XCC_MAP_FLAGS := $(XCC_MAP_FLAGS_$(CONFIG))
+else
+XCC_C_FLAGS ?= $(XCC_FLAGS)
+XCC_CPP_FLAGS ?= $(XCC_FLAGS)
+XCC_XC_FLAGS ?= $(XCC_FLAGS)
+XCC_ASM_FLAGS ?= $(XCC_FLAGS)
+XCC_MAP_FLAGS ?= $(XCC_FLAGS)
+endif
+endif
+
+ARCH ?= xs1b
+
+ifeq ($(BUILDING_LIBRARY),1)
+BUILD_NAME := $(LIBRARY)
+WORKING_DIR := .build_$(LIBRARY)
+INCLUDE_DIRS := *
+SOURCE_DIRS := *
+LIB_DIRS := *
+else
+BUILD_NAME ?= $(CONFIG)
+WORKING_DIR ?= $(if $(filter Default,$(CONFIG)),.build,.build_$(CONFIG))
+INCLUDE_DIRS ?= *
+SOURCE_DIRS ?= *
+LIB_DIRS ?= *
+endif
+TARGET_DIR = ./$(WORKING_DIR)
+FAKE_INC_DIR = $(TARGET_DIR)/fake_inc
+
+BIN_DIR=$(BASE_DIR)/bin/$(if $(filter Default,$(CONFIG)),,$(CONFIG))
+LIB_DIR=$(BASE_DIR)/lib/$(ARCH)
+
+ALL_GENERATED_FILES =
+GEN_DIRS =
+
+ifeq ($(wildcard app_build_info),)
+else
+GEN_DIR := $(TARGET_DIR)/generated
+-include app_build_info
+endif
+
+ifeq ($(GENERATED_FILES),)
+else
+ALL_GENERATED_FILES := $(ALL_GENERATED_FILES) $(foreach x,$(GENERATED_FILES),$(GEN_DIR)/$x)
+GEN_FILES_MODULE_DIRS := $(GEN_FILES_MODULE_DIRS) $(foreach x,$(GENERATED_FILES),$(GEN_DIR)/$x*****.)
+GEN_DIRS := $(GEN_DIRS) $(GEN_DIR)
+endif
+
+ALL_CONFIGS = $(sort Default $(strip $(foreach x,$(filter XCC_FLAGS_%,$(.VARIABLES)),$(if $(findstring .,$x),,$(subst XCC_FLAGS_,,$x)))) $(strip $(foreach x,$(filter INCLUDE_ONLY_IN_%,$(.VARIABLES)),$(subst INCLUDE_ONLY_IN_,,$x))))
+
+OTHER_CONFIGS = $(filter-out $(CONFIG),$(ALL_CONFIGS))
+EXCLUDE_DIRS = $(foreach x, $(OTHER_CONFIGS), $(foreach y,$(INCLUDE_ONLY_IN_$x),$y))
+
+FULL_INCLUDE_DIRS := $(foreach x, $(INCLUDE_DIRS), $(call EXPAND_DIR,$(call SRCDIR,$x)))
+FULL_SOURCE_DIRS := $(foreach x, $(SOURCE_DIRS), $(call EXPAND_DIR,$(call SRCDIR,$x)))
+FULL_LIB_DIRS := $(foreach x, $(LIB_DIRS), $(call EXPAND_DIR,$(call SRCDIR,$x)))
+
+EXCLUDE_SOURCE_DIRS := $(foreach x, $(EXPORT_SOURCE_DIRS), $(call EXPAND_DIR,$(call SRCDIR,$x)))
+
+SAME_DIR = $(if $(filter $(abspath $(call UNMANGLE,$1)),$(abspath $(call UNMANGLE,$2))),1,)
+
+FULL_SOURCE_DIRS := $(filter-out $(EXCLUDE_SOURCE_DIRS),$(FULL_SOURCE_DIRS))
+FULL_SOURCE_DIRS := $(filter-out $(EXCLUDE_DIRS),$(FULL_SOURCE_DIRS))
+
+FULL_INCLUDE_DIRS := $(filter-out $(EXCLUDE_DIRS),$(FULL_INCLUDE_DIRS))
+
+$(foreach x, $(call GET_ALL_FILES, $(FULL_SOURCE_DIRS)), $(if $(XCC_FLAGS_$(notdir $x)), $(eval XCC_FLAGS_$x := $(XCC_FLAGS_$(notdir $x))),))
+
+PREBUILD_MAKEFILES :=
+
+GET_LIBRARY = $(if $(filter $(MODULE_LIBRARIES),$1),$(firstword $(filter $(MODULE_LIBRARIES), $1)),$(firstword $1))
+
+CURRENT_REPO = $(notdir $(abspath ..))
+ECLIPSE_PROJECTS :=
+EXTERNAL_INCLUDE_DIRS :=
+REPO_PATHS :=
+
+
+
+define INCLUDE_MODULE
+LIBRARY :=
+LIBRARIES :=
+SOURCE_DIRS :=
+INCLUDE_DIRS :=
+LIB_DIRS :=
+CURRENT_MODULE := $$(strip $$(call GET_MODULE_NAME,$1))
+CURRENT_MODULE_DIR := $$(if $$(call SEARCH_FOR_MODULE,$$(CURRENT_MODULE)), $$(call SEARCH_FOR_MODULE,$$(CURRENT_MODULE)), not_found)
+ifeq ($$(words $$(CURRENT_MODULE_DIR)),1)
+else
+ifeq ($$(words $$(filter %/$$(CURRENT_REPO)/$$(CURRENT_MODULE),$$(CURRENT_MODULE_DIR))),1)
+CURRENT_MODULE_DIR := $$(filter %/$$(CURRENT_REPO)/$$(CURRENT_MODULE),$$(CURRENT_MODULE_DIR))
+else
+$$(error Multiple copies of $$(CURRENT_MODULE) found: $$(CURRENT_MODULE_DIR))
+endif
+endif
+
+
+MODULE_XCC_FLAGS :=
+MODULE_XCC_C_FLAGS :=
+MODULE_XCC_XC_FLAGS :=
+MODULE_XCC_ASM_FLAGS :=
+EXPORT_SOURCE_DIRS :=
+DEPENDENT_MODULES :=
+$$(if $$(call WILDCARD,$$(CURRENT_MODULE_DIR)/*),,$$(error Cannot find module `$$(call UNMANGLE_NO_ESCAPE, $$(CURRENT_MODULE))'))
+VERSION :=
+GEN_DIR := $$(TARGET_DIR)/generated/$$(CURRENT_MODULE)
+GENERATED_FILES :=
+-include $$(call UNMANGLE,$$(CURRENT_MODULE_DIR))/VERSION
+REPO := $$(notdir $$(abspath $$(call UNMANGLE,$$(CURRENT_MODULE_DIR))/..))
+REPO := $$(if $$(filter $$(REPO),$$(ECLIPSE_PROJECTS)),,$$(REPO))
+REPO := $$(if $$(filter $$(REPO),$$(CURRENT_REPO)),,$$(REPO))
+
+REPO_PATH := $$(patsubst %/$$(CURRENT_MODULE),%,$$(CURRENT_MODULE_DIR))
+REPO_PATHS := $$(filter-out $$(REPO_PATH),$$(REPO_PATHS)) $$(REPO_PATH)
+
+ECLIPSE_PROJECTS += $$(REPO)
+
+
+REQUIRED_VERSION := $$(call GET_MODULE_VERSION,$1)
+$$(if $$(REQUIRED_VERSION), $$(if $$(strip $$(VERSION)),,$$(error Required version for $$(CURRENT_MODULE) is $$(REQUIRED_VERSION) but there is no VERSION file for that module)))
+$$(if $$(REQUIRED_VERSION), $$(if $$(strip $$(filter $$(REQUIRED_VERSION),$$(VERSION))),,$$(error Required version for $$(CURRENT_MODULE) is $$(REQUIRED_VERSION) but actual version is $$(VERSION))),)
+-include $$(call UNMANGLE,$$(CURRENT_MODULE_DIR)/module_build_info)
+
+LIBRARY := $$(if $$(LIBRARIES),$$(call GET_LIBRARY,$$(LIBRARIES)),$$(LIBRARY))
+EXCLUDE_LIBS := $$(EXCLUDE_LIBS) $$(filter-out $$(LIBRARY),$$(LIBRARIES))
+LIBRARY := $$(if $$(filter 1,$$(EXPORTED)),,$$(LIBRARY))
+SOURCE_DIRS := $$(if $$(SOURCE_DIRS), $$(SOURCE_DIRS), *)
+INCLUDE_DIRS := $$(if $$(INCLUDE_DIRS), $$(INCLUDE_DIRS), *)
+LIB_DIRS := $$(if $$(LIB_DIRS), $$(LIB_DIRS), *)
+MODULE_SOURCE_DIRS := $$(foreach x,$$(SOURCE_DIRS), $$(call EXPAND_DIR,$$(CURRENT_MODULE_DIR)/$$x))
+MODULE_EXPORT_DIRS := $$(foreach x, $$(EXPORT_SOURCE_DIRS), $$(CURRENT_MODULE_DIR)/$$x)
+MODULE_SOURCE_DIRS := $$(if $$(LIBRARY), $$(filter $$(MODULE_EXPORT_DIRS), $$(MODULE_SOURCE_DIRS)), $$(MODULE_SOURCE_DIRS))
+MODULE_INCLUDE_DIRS := $$(foreach x,$$(INCLUDE_DIRS), $$(call EXPAND_DIR,$$(CURRENT_MODULE_DIR)/$$x))
+MODULE_INCLUDE_DIRS := $$(if $$(LIBRARY), $$(filter $$(MODULE_EXPORT_DIRS), $$(MODULE_INCLUDE_DIRS)), $$(MODULE_INCLUDE_DIRS))
+
+PREBUILD_MAKEFILES := $$(if $$(LIBRARY), $$(if $$(call WILDCARD,$$(CURRENT_MODULE_DIR)/Makefile), $$(CURRENT_MODULE_DIR)/Makefile,),) $$(PREBUILD_MAKEFILES)
+
+
+
+ifeq ($$(GENERATED_FILES),)
+else
+ALL_GENERATED_FILES := $$(ALL_GENERATED_FILES) $$(foreach x,$$(GENERATED_FILES),$$(GEN_DIR)/$$x)
+GEN_DIRS := $$(GEN_DIR) $$(GEN_DIRS)
+GEN_FILES_MODULE_DIRS := $$(GEN_FILES_MODULE_DIRS) $$(foreach x,$$(GENERATED_FILES),$$(GEN_DIR)/$$(x)*****$$(strip $$(CURRENT_MODULE_DIR)))
+endif
+
+
+FULL_SOURCE_DIRS := $(FULL_SOURCE_DIRS) $$(MODULE_SOURCE_DIRS)
+FULL_INCLUDE_DIRS := $(FULL_INCLUDE_DIRS) $$(MODULE_INCLUDE_DIRS)
+EXTERNAL_INCLUDE_DIRS := $(EXTERNAL_INCLUDE_DIRS) $$(MODULE_INCLUDE_DIRS)
+
+FULL_LIB_DIRS := $(FULL_LIB_DIRS) $$(foreach x,$$(LIB_DIRS), $$(call EXPAND_DIR, $$(CURRENT_MODULE_DIR)/$$x))
+
+
+$$(foreach x, $$(call GET_ALL_FILES, $$(SOURCE_DIRS)), $$(if $$(XCC_FLAGS_$$(notdir $$x)), $$(eval XCC_FLAGS_$$x := $$(XCC_FLAGS_$$(notdir $$x))),))
+
+
+$$(if $$(MODULE_XCC_FLAGS), $$(call SET_XCC_FLAGS, $$(SOURCE_DIRS), $$(MODULE_XCC_FLAGS)),)
+$$(if $$(MODULE_XCC_C_FLAGS), $$(call SET_XCC_C_FLAGS, $$(SOURCE_DIRS), $$(MODULE_XCC_C_FLAGS)),)
+
+
+$$(if $$(MODULE_XCC_CPP_FLAGS), $$(call SET_XCC_CPP_FLAGS, $$(SOURCE_DIRS), $$(MODULE_XCC_CPP_FLAGS)),)
+$$(if $$(MODULE_XCC_XC_FLAGS), $$(call SET_XCC_XC_FLAGS, $$(SOURCE_DIRS), $$(MODULE_XCC_XC_FLAGS)),)
+$$(if $$(MODULE_XCC_ASM_FLAGS), $$(call SET_XCC_ASM_FLAGS, $$(SOURCE_DIRS), $$(MODULE_XCC_ASM_FLAGS)),)
+NEW_MODULES := $$(strip $$(filter-out $$(UM),$$(DEPENDENT_MODULES)))
+
+UM += $$(NEW_MODULES)
+TO_PROCESS += $$(NEW_MODULES)
+
+endef
+
+define INCLUDE_MODULES
+PROCESS_NOW := $$(strip $$(TO_PROCESS))
+TO_PROCESS :=
+$$(foreach x,$$(PROCESS_NOW),$$(eval $$(call INCLUDE_MODULE,$$x)))
+endef
+
+define INCLUDE_ALL_MODULES
+$(if $(TO_PROCESS),$(eval $(call INCLUDE_MODULES)))
+$(if $(TO_PROCESS),$(eval $(call INCLUDE_ALL_MODULES)))
+endef
+
+TO_PROCESS := $(UM)
+$(eval $(call INCLUDE_ALL_MODULES))
+
+
+TBD0 = $(patsubst ./%,td/%,$(patsubst ./../%,td/%,$(patsubst ./../../%,td/%,$1)))
+
+TBD1 = $(if $(filter td%,$(call TBD0,$1)),$(call TBD0,$1),td/$1)
+
+TO_BUILD_DIR0 = $(patsubst td/%,/%,$(call TBD1,$1))
+
+TO_BUILD_DIR1 = $(if $(call IS_RELATIVE,$1),$(call TO_BUILD_DIR0,$1),$1)
+
+SHORTEN = $(if $(filter /module_%,$(subst /module_, /module_,$1)),$(subst module_,m_,$(subst $(SP),,$(filter /module_%,$(subst /module_, /module_,$1)))),$1)
+
+TO_BUILD_DIR2 = $(TARGET_DIR)$(call SHORTEN,$(call TO_BUILD_DIR1,$1))
+
+TO_BUILD_DIR = $(call TO_BUILD_DIR2,$(strip $1))
+
+EXCLUDE_PATTERN = $(foreach x, $(EXCLUDE_FILES), %$x)
+EXCLUDE_PATTERN += $(foreach x, $(OTHER_CONFIGS), $(foreach y,$(INCLUDE_ONLY_IN_$x),%$y))
+
+C_SOURCE_FILES := $(foreach x, $(FULL_SOURCE_DIRS), $(call WILDCARD,$x/*.c))
+C_SOURCE_FILES := $(filter-out $(EXCLUDE_PATTERN), $(C_SOURCE_FILES))
+C_SOURCE_FILES += $(filter %.c, $(ALL_GENERATED_FILES))
+
+C_OBJ_FILES = $(patsubst %.c, %.c.o, $(C_SOURCE_FILES))
+C_DEP_FILES = $(foreach x,$(C_SOURCE_FILES:.c=.c.d),$(call TO_BUILD_DIR, $x))
+
+CPP_SOURCE_FILES := $(foreach x, $(FULL_SOURCE_DIRS), $(call WILDCARD,$x/*.cpp))
+CPP_SOURCE_FILES := $(filter-out $(EXCLUDE_PATTERN), $(CPP_SOURCE_FILES))
+CPP_SOURCE_FILES += $(filter %.cpp, $(ALL_GENERATED_FILES))
+
+CPP_OBJ_FILES = $(patsubst %.cpp, %.cpp.o, $(CPP_SOURCE_FILES))
+CPP_DEP_FILES = $(foreach x,$(CPP_SOURCE_FILES:.cpp=.cpp.d),$(call TO_BUILD_DIR, $x))
+
+XC_SOURCE_FILES := $(foreach x, $(FULL_SOURCE_DIRS), $(call WILDCARD,$x/*.xc))
+XC_SOURCE_FILES := $(filter-out $(EXCLUDE_PATTERN), $(XC_SOURCE_FILES))
+XC_SOURCE_FILES += $(filter %.xc, $(ALL_GENERATED_FILES))
+
+XC_OBJ_FILES = $(patsubst %.xc, %.xc.o, $(XC_SOURCE_FILES))
+XC_DEP_FILES = $(foreach x,$(XC_SOURCE_FILES:.xc=.xc.d),$(call TO_BUILD_DIR, $x))
+
+ASM_SOURCE_FILES := $(foreach x, $(FULL_SOURCE_DIRS), $(call WILDCARD,$x/*.s)) $(foreach x, $(FULL_SOURCE_DIRS), $(call WILDCARD,$x/*.S))
+ASM_SOURCE_FILES := $(filter-out $(EXCLUDE_PATTERN), $(ASM_SOURCE_FILES))
+ASM_SOURCE_FILES += $(filter %.S, $(ALL_GENERATED_FILES)) $(filter %.s, $(ALL_GENERATED_FILES))
+
+
+ASM_OBJ_FILES = $(patsubst %.S, %.s.o, $(patsubst %.s, %.o, $(ASM_SOURCE_FILES)))
+ASM_DEP_FILES = $(foreach x,$(ASM_SOURCE_FILES:.S=.s.d),$(call TO_BUILD_DIR, $x))
+
+
+XTA_SOURCE_FILES := $(foreach x, $(FULL_SOURCE_DIRS), $(call WILDCARD,$x/*.xta))
+XTA_SOURCE_FILES := $(filter-out $(EXCLUDE_PATTERN), $(XTA_SOURCE_FILES))
+
+OBJ_SOURCE_FILES := $(foreach x, $(FULL_SOURCE_DIRS), $(call WILDCARD,$x/*.o))
+OBJ_SOURCE_FILES := $(filter-out $(EXCLUDE_PATTERN), $(OBJ_SOURCE_FILES))
+
+XN_SOURCE_FILES0 = $(foreach x, $(FULL_SOURCE_DIRS), $(call WILDCARD,$x/*.xn))
+XN_SOURCE_FILES := $(filter %$(call MANGLE,$(TARGET).xn), $(XN_SOURCE_FILES0))
+XN_SOURCE_FILES := $(filter-out $(EXCLUDE_PATTERN), $(XN_SOURCE_FILES))
+XN_SOURCE_FILES:=$(strip $(XN_SOURCE_FILES))
+SOURCE_FILES = $(C_SOURCE_FILES) $(CPP_SOURCE_FILES) $(XC_SOURCE_FILES) $(ASM_SOURCE_FILES)
+
+OBJ_FILES := $(foreach x,$(SOURCE_FILES),$(call TO_OBJ,$(call TO_BUILD_DIR,$x)))
+
+DEP_FILES_0 = $(CPP_DEP_FILES) $(C_DEP_FILES) $(XC_DEP_FILES) $(ASM_DEP_FILES)
+DEP_FILES = $(patsubst %.d, %.0.d, $(DEP_FILES_0))
+
+FULL_INCLUDE_DIRS := $(filter-out $(EXCLUDE_PATTERN), $(FULL_INCLUDE_DIRS))
+FULL_INCLUDE_DIRS := $(FULL_INCLUDE_DIRS) $(GEN_DIRS)
+
+HEADER_FILES = $(filter-out $(EXCLUDE_FILES),$(foreach x, $(FULL_INCLUDE_DIRS), $(call WILDCARD,$x/*.h)))
+
+GEN_HEADER_FILES = $(filter %.h,$(ALL_GENERATED_FILES))
+
+NOTDIR_HEADER_FILES = $(foreach x,$(HEADER_FILES),$(notdir $x))
+
+define HWARNING_RULE
+.PHONY: $1.header_warning
+$1.header_warning:
+	@echo WARNING: Duplicate header found: $1
+	@echo WARNING: Found in: $(foreach x,$(filter %$1,$(HEADER_FILES)),$(call UNMANGLE,$x))
+endef
+
+IS_DUP_HEADER=$(strip $(filter $(1)$(1),$(subst $(SP),,$(filter $1,$(NOTDIR_HEADER_FILES)))))
+
+DUP_HEADERS = $(foreach x,$(sort $(NOTDIR_HEADER_FILES)),$(if $(call IS_DUP_HEADER,$x),$x,))
+
+HEADER_WARNINGS := $(foreach x,$(DUP_HEADERS),$x.header_warning)
+
+$(foreach x,$(DUP_HEADERS),$(eval $(call HWARNING_RULE,$x)))
+
+HEADER_DEP_FILES := $(foreach x,$(HEADER_FILES:.h=.dh),$(call TO_BUILD_DIR, $x))
+
+HEADER_STATUS_FILES = $(HEADER_DEP_FILES:%.dh=%.hstat)
+
+QUOTED_INCLUDE_DIRS = $(foreach x, $(FULL_INCLUDE_DIRS),"$(call DOTDOT,$x)")
+INCLUDE_FLAGS = $(foreach x,$(QUOTED_INCLUDE_DIRS),-I$(call UNMANGLE_NO_ESCAPE,$x))
+
+
+ACTUAL_REPO_PATHS = $(foreach x,$(REPO_PATHS),$(if $(call IS_REPO,$x),$x,))
+CONTAINING_REPO_PATHS = $(foreach x,$(REPO_PATHS),$(if $(call IS_REPO,$x),,$x))
+
+WORKSPACE_RELATIVE_ACTUAL = $(strip $(foreach p,$(ACTUAL_REPO_PATHS),$(patsubst $p/%,$(notdir $p)/%,$(filter $p%,$1))))
+
+WORKSPACE_RELATIVE_CONTAINED = $(strip $(foreach p,$(CONTAINING_REPO_PATHS),$(patsubst $p/%,%,$1)))
+
+WORKSPACE_RELATIVE = $(if $(call WORKSPACE_RELATIVE_ACTUAL,$1),$(call WORKSPACE_RELATIVE_ACTUAL,$1),$(call WORKSPACE_RELATIVE_CONTAINED,$1))
+
+WORKSPACE_RELATIVE_INCLUDE_DIRS = \
+  $(foreach x,$(EXTERNAL_INCLUDE_DIRS),$(call WORKSPACE_RELATIVE,$x))
+
+OPTIONAL_HEADER_FLAG=$(if $(filter $1,$(NOTDIR_HEADER_FILES)),-D__$(strip $(subst .,_,$1))_exists__=1,)
+
+OPTIONAL_HEADER_FLAGS=$(foreach x,$(OPTIONAL_HEADERS),$(call OPTIONAL_HEADER_FLAG,$x))
+
+VPATH += $(FAKE_INC_DIR)
+VPATH += $(SEARCH_DIR)
+
+REMOVE_TRAILING_SLASH = $(strip $(subst !!!,,$(subst / !!!, !!!,$1 !!!)))
+
+LIB_FILES := $(foreach x, $(FULL_LIB_DIRS), $(call WILDCARD,$x/xs1b/lib*.a))
+EXCLUDE_LIB_PATTERN = $(foreach x, $(EXCLUDE_LIBS), %lib$x.a)
+LIB_FILES := $(filter-out $(EXCLUDE_LIB_PATTERN), $(LIB_FILES))
+LIB_DIRS := $(foreach x, $(LIB_FILES), $(dir $x))
+#remove duplicates
+LIB_DIRS := $(sort $(LIB_DIRS))
+LIB_FLAGS = $(foreach x,$(LIB_DIRS), -L "$(strip $(call TO_OS, $(call REMOVE_TRAILING_SLASH,$(call UNMANGLE_NO_ESCAPE,$(call DOTDOT,$x)))))") $(foreach x,$(LIB_FILES),-l$(patsubst lib%.a,%,$(notdir $x)))
+define NO_SOURCE
+
+
+ERROR: No source files found
+
+
+endef
+
+ifeq ($(strip $(OBJ_FILES)),)
+$(error $(call NO_SOURCE))
+endif
+
+# Make rules for directories
+
+$(FAKE_INC_DIR)/ : | $(TARGET_DIR)/
+	@-$(call MKDIR, $(FAKE_INC_DIR)) > $(NULL)
+
+$(TARGET_DIR)/ :
+	@-$(call MKDIR, $(TARGET_DIR)) > $(NULL)
+
+ifeq ($(CONFIG),Default)
+else
+$(BIN_DIR)/:
+	@-$(call MKDIR,$(BIN_DIR)) > $(NULL)
+endif
+
+$(LIB_DIR)/:
+	@-$(call MKDIR,$(LIB_DIR)) > $(NULL)
+
+$(BASE_DIR)/bin/:
+	@-$(call MKDIR,$(BASE_DIR)/bin) > $(NULL)
+
+$(GEN_DIRS):
+	@-$(call MKDIR,$@) > $(NULL)
+
+$(ALL_GENERATED_FILES) : | $(GEN_DIRS)
+
+define GEN_DIR_DEF
+$1 : GEN_DIR = $(patsubst %/,%,$(dir $1))
+$1 : CURRENT_MODULE_DIR = $(strip $(subst $1*****,,$(filter $1*****%,$(GEN_FILES_MODULE_DIRS))))
+endef
+
+$(foreach x,$(ALL_GENERATED_FILES),$(eval $(call GEN_DIR_DEF,$x)))
+
+# Make rules for source
+
+
+# Make rules for objects
+XCC = xcc
+XAR = xmosar
+XOBJDUMP = xobjdump
+
+
+TARGET_PATH := $(subst \ , ,$(XCC_TARGET_PATH))
+TARGET_PATH := $(subst \,/,$(TARGET_PATH))
+TARGET_PATH := $(subst ",,$(TARGET_PATH))
+TARGET_PATH := $(subst ;, ,$(call MANGLE,$(subst $(PATHSEP),;,$(TARGET_PATH))))
+
+POSSIBLE_TARGETS = $(foreach y,$(foreach x,$(TARGET_PATH),$(call WILDCARD,$x/*)),$(notdir $y))
+
+.PHONY: xmosupdate
+xmosupdate:
+	-@xmosupdate getbsp $(TARGET)
+
+
+ifeq ($(BUILDING_LIBRARY),)
+ifeq (,$(XN_SOURCE_FILES))
+XMOSUPDATE = $(if $(strip $(filter $(TARGET),$(POSSIBLE_TARGETS))),,xmosupdate)
+TARGET_FLAGS = -target="$(TARGET)"
+else
+XMOSUPDATE =
+endif
+else
+TARGET_FLAGS = -march=$(ARCH)
+endif
+
+define LANG
+$(strip $(if $(filter %.c, $1), C,
+  $(if $(filter %.xc, $1), XC,
+     $(if $(filter %.cpp, $1), CPP,
+	$(if $(filter %.S, $1), ASM,
+	   $(if $(filter %.s, $1), ASM, ))))))
+endef
+
+define lang_flags
+$(if $(XCC_$(call LANG,$1)_FLAGS), $(XCC_$(call LANG,$1)_FLAGS), $(XCC_FLAGS))
+endef
+
+define make_flags
+$(if $(XCC_FLAGS_$1), $(XCC_FLAGS_$1)  $(TARGET_FLAGS), $(call lang_flags, $1) $(TARGET_FLAGS)) $(EXTRA_$(call LANG,$1)_FLAGS) -DCONFIG=$(CONFIG)
+endef
+
+ifeq ($(WINFLAG),1)
+NOP = rem
+else
+NOP = echo -n
+endif
+
+
+$(HEADER_FILES):
+	@$(NOP)
+
+
+ifneq ($(VERBOSE),1)
+.SILENT: $(OBJ_FILES) $(BIN_DIR) $(TARGET_DIR) $(FAKE_INC_DIR)
+endif
+
+%.h: | $(FAKE_INC_DIR)
+	$(if $(filter $@,$(GEN_HEADER_FILES)),,@echo WARNING: Include file $@ missing)
+	@echo "Missing include file" > $(FAKE_INC_DIR)/$(notdir $@)
+
+define OBJ_RULE
+$(call TO_OBJ,$(call TO_BUILD_DIR,$1)) : $(call UNMANGLE,$1) $(call UNMANGLE,$(XN_SOURCE_FILES)) | $(TARGET_DIR)/
+	@echo Compiling $(call UNMANGLE, $(notdir $1))
+	cd $(TARGET_DIR) && $(XCC) -c $(OPTIONAL_HEADER_FLAGS) $(INCLUDE_FLAGS) $(call make_flags,$1) "$$(call DOTDOT,$$<)" $(foreach x,$(XN_SOURCE_FILES),"$(call DOTDOT,$(call UNMANGLE_NO_ESCAPE,$x))") -o ../$$@
+endef
+
+$(foreach x,$(SOURCE_FILES),$(eval $(call OBJ_RULE,$x)))
+
+
+
+ifeq ($(strip $(PREBUILD_MAKEFILES)),)
+NO_PREBUILD := 1
+endif
+
+ifeq ($(call WILDCARD,$(call MANGLE,$(AUTO_PROJ))),)
+eclipse_config:
+	@echo "Warning: Cannot updating eclipse config (no auto_proj tool)"
+else
+ifeq ($(WINFLAG),0)
+eclipse_config:
+	@echo "Updating eclipse config"
+	@"$(AUTO_PROJ)" $(ECLIPSE_CONFIG_FILE) $(WORKSPACE_RELATIVE_INCLUDE_DIRS) > .tmpproject
+	@cp .tmpproject  $(ECLIPSE_CONFIG_FILE)
+	@$(call RM,.tmpproject)
+else
+eclipse_config:
+	@echo "Updating eclipse config"
+	@"$(AUTO_PROJ)" $(call TO_OS,$(ECLIPSE_CONFIG_FILE)) $(WORKSPACE_RELATIVE_INCLUDE_DIRS) > .tmpproject
+	@cmd /c more .tmpproject > $(call TO_OS,$(ECLIPSE_CONFIG_FILE))
+	@$(call RM,.tmpproject)
+endif
+endif
+
+ifeq ($(AUTO_ECLIPSE),1)
+ECLIPSE_CONFIG_FILE = $(if $(TWO_LEVEL),../.cproject,./.cproject)
+ECLIPSE_CONFIG=$(if $(wildcard $(ECLIPSE_CONFIG_FILE)),eclipse_config,)
+else
+ECLIPSE_CONFIG=
+endif
+
+ifeq ($(strip $(UM)),)
+USING_MODULES_MSG = No modules used.
+else
+USING_MODULES_MSG = Using modules: $(strip $(call QUOTE_IF_NEEDED,$(UM)))
+endif
+
+.PHONY: report_modules
+report_modules:
+	@echo $(USING_MODULES_MSG)
+
+ifeq ($(NO_PREBUILD),1)
+ifeq ($(VERBOSE),1)
+$(BIN_DIR)/$(APP_NAME).xe : $(XMOSUPDATE) $(HEADER_WARNINGS) $(OBJ_FILES) $(call UNMANGLE,$(XN_SOURCE_FILES)) $(XTA_SOURCE_FILES) $(call UNMANGLE,$(LIB_FILES)) | $(ECLIPSE_CONFIG) $(BIN_DIR)/ report_modules
+	cd $(TARGET_DIR) && $(XCC) $(TARGET_FLAGS) $(XCC_MAP_FLAGS) $(LIB_FLAGS) $(foreach x,$(OBJ_FILES),$(call TO_OS,$(call DOTDOT,$x))) $(call TO_OS,$(foreach x,$(XN_SOURCE_FILES),"$(call DOTDOT,$(call UNMANGLE_NO_ESCAPE,$x))")) $(call TO_OS,$(foreach x,$(XTA_SOURCE_FILES),"$(call UNMANGLE,$(call DOTDOT,$x))")) -o "$(call TO_OS,$(call DOTDOT,$@))"
+else
+$(BIN_DIR)/$(APP_NAME).xe : $(XMOSUPDATE) $(HEADER_WARNINGS) $(OBJ_FILES) $(call UNMANGLE,$(XN_SOURCE_FILES))  $(XTA_SOURCE_FILES) $(call UNMANGLE,$(LIB_FILES)) | $(ECLIPSE_CONFIG) $(BIN_DIR)/ report_modules
+	@echo Creating $(notdir $@)
+	@cd $(TARGET_DIR) && $(XCC) $(TARGET_FLAGS) $(XCC_MAP_FLAGS) $(LIB_FLAGS) $(foreach x,$(OBJ_FILES),$(call TO_OS,$(call DOTDOT,$x))) $(call TO_OS,$(foreach x,$(XN_SOURCE_FILES),"$(call DOTDOT,$(call UNMANGLE_NO_ESCAPE,$x))")) $(call TO_OS,$(foreach x,$(XTA_SOURCE_FILES),"$(call UNMANGLE,$(call DOTDOT,$x))")) -o "$(call TO_OS,$(call DOTDOT,$@))"
+endif
+
+ifeq ($(VERBOSE),1)
+$(LIB_DIR)/%.a :  $(OBJ_FILES) $(call UNMANGLE,$(XN_SOURCE_FILES)) |$(LIB_DIR)/
+	cd $(TARGET_DIR) && $(XAR) cru ../$@ $(addprefix ../, $(OBJ_FILES)) 
+else
+$(LIB_DIR)/%.a :  $(OBJ_FILES) $(call UNMANGLE,$(XN_SOURCE_FILES))  |$(LIB_DIR)/
+	@echo Creating $(notdir $@)
+	@cd $(TARGET_DIR) && $(XAR) cru ../$@ $(addprefix ../, $(OBJ_FILES)) 
+endif
+
+
+else
+#NO_PREBUILD := 1
+#export NO_PREBUILD
+.PHONY: prebuild
+
+
+%.prebuild: prebuild
+	@echo ***Building $(notdir $(patsubst %/,%,$(call UNMANGLE_NO_ESCAPE,$(dir $*))))***
+	@cd "$(call TO_OS,$(call UNMANGLE_NO_ESCAPE,$(dir $*)))" && $(MAKE) --no-print-directory -f $(notdir $*) all
+
+$(BIN_DIR)/%.xe: $(foreach x, $(PREBUILD_MAKEFILES), $x.prebuild)
+	@echo ***Building main application***
+	@$(MAKE) NO_PREBUILD=1 --no-print-directory $(BIN_DIR)/$*.xe
+endif
+
+define DEP_RULE
+$(call TO_DEP,$(call TO_BUILD_DIR,$1)) : $(call UNMANGLE,$1) $(GEN_HEADER_FILES) | $(TARGET_DIR)/
+	@echo Creating dependencies for $(call UNMANGLE_NO_ESCAPE,$(notdir $1))
+	@cd $(TARGET_DIR) && $(XCC) -MMD -E $(XCC_FLAGS) $(OPTIONAL_HEADER_FLAGS) $(INCLUDE_FLAGS) "$$(call DOTDOT,$$<)" > $(NULL)
+	@-$$(call MKDIR, $$(dir $$@))
+	@$$(call CHANGEDEP,$$@,$1)
+	@$(NOP)
+endef
+
+$(foreach x,$(SOURCE_FILES),$(eval $(call DEP_RULE,$x)))
+
+lib: $(LIB_DIR)/lib$(LIBRARY).a
+
+ifneq ($(MAKECMDGOALS),clean_common)
+ifneq ($(MAKECMDGOALS),clean_lib)
+ifneq ($(MAKECMDGOALS),list_includes)
+ifeq  ($(BUILDING_LIBRARY),1)
+-include $(DEP_FILES_0)
+else
+ifeq ($(NO_PREBUILD),1)
+-include $(DEP_FILES_0)
+else
+endif
+endif
+endif
+endif
+endif
+
+
+
+
+.PRECIOUS: $(OBJ_FILES)
+.SECONDARY: $(OBJ_FILES)
+
+
+
+# Top level rules
+
+%.prebuild.clean:
+	@echo Cleaning $(abspath $(call UNMANGLE,$(dir $*)))
+	cd "$(call TO_OS,$(call UNMANGLE_NO_ESCAPE,$(dir $*)))" && $(MAKE) --no-print-directory -f $(notdir $*) clean
+
+
+clean_common: $(foreach x, $(PREBUILD_MAKEFILES), $x.prebuild.clean)
+	@echo Cleaning $(abspath $(dir .))
+	-$(call RMRF,$(BIN_DIR))
+	-$(call RMRF,$(TARGET_DIR))
+
+
+clean_lib:
+	-$(call RMRF,$(LIB_DIR))
+	-$(call RMRF,$(TARGET_DIR))
+
+partial_clean:
+	-$(call RMRF,$(TARGET_DIR))
+
+clean_fake_includes : | $(FAKE_INC_DIR)/
+	@-$(call RMRF,$(FAKE_INC_DIR))
+
+all: clean_fake_includes
+
+
+
+ifeq ($(BUILDING_LIBRARY),1)
+MODULE_NAME ?= $(subst .,_,$(notdir $(call MANGLE,$(abspath .))))
+EXPORT_DIR = $(BASE_DIR)/export/$(MODULE_NAME)
+EXPORT_LIB_DIR = $(EXPORT_DIR)/lib/$(ARCH)
+
+$(EXPORT_DIR):
+	@echo Creating export directory
+	@$(call MKDIR,$(EXPORT_DIR))	
+
+$(EXPORT_LIB_DIR)/lib%.a:
+	@$(call MKDIR,$(BASE_DIR)/export/$(MODULE_NAME)/lib/$(ARCH))
+	@echo Copying library
+	@$(call CP,$(LIB_DIR)/lib$*.a $(BASE_DIR)/export/$(MODULE_NAME)/lib/$(ARCH)/lib$*.a)
+
+%.export:
+	@echo Exporting directory: $*
+	@$(call XCP, $* $(EXPORT_DIR)/$*)
+
+.PHONY: $(EXPORT_DIR)/module_build_info
+
+$(EXPORT_DIR)/module_build_info:
+	@echo Copying module_build_info
+	@$(call CP, module_build_info $(EXPORT_DIR)/module_build_info)
+	@echo "EXPORTED = 1" >> $(EXPORT_DIR)/module_build_info
+
+ifeq ($(LIBRARY),NONE)
+else
+export: lib
+endif
+
+.PHONY: do_export
+
+%.generated_export:
+	@$(call XCP,$(TARGET_DIR)/generated/$* $(EXPORT_DIR)/$(GENERATED_HEADER_EXPORT_DIR)/$*)
+
+do_export: $(EXPORT_DIR) $(foreach lib, $(LIBRARIES), $(EXPORT_LIB_DIR)/lib$(lib).a) $(foreach x, $(EXPORT_SOURCE_DIRS), $x.export) $(EXPORT_DIR)/module_build_info $(if $(GENERATED_HEADER_EXPORT_DIR),$(foreach x,$(filter %.h,$(GENERATED_FILES)),$x.generated_export))
+	@echo Export complete
+
+.PHONY: export
+
+ifeq ($(OVERRIDE_EXPORT_TARGET),)
+export:
+	@$(call RMRF, export)
+	@$(MAKE) -f $(XCOMMON_MAKEFILE) do_export
+endif
+
+endif
+
+list_includes:
+	@echo **-includes-**
+	@echo $(WORKSPACE_RELATIVE_INCLUDE_DIRS)
+

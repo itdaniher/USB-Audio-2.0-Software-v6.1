@@ -1,0 +1,2 @@
+# The files in this module need to be built at -O2
+MODULE_XCC_FLAGS = $(XCC_FLAGS) -O3

@@ -1,0 +1,93 @@
+<?xml version="1.0" ?>
+<xpd>
+    <components></components>
+    <dependency repo = "sc_ios">
+        <githash>b0740865797969626e4b1aa7f3aee57debab919b</githash>
+        <uri>git://git/apps/sc_ios</uri>
+    </dependency>
+    <dependency repo = "sc_usb">
+        <githash>5c499106a996590215bdda628bd708c07ad1809e</githash>
+        <uri>git://git/apps/sc_usb</uri>
+    </dependency>
+    <dependency repo = "sc_spdif">
+        <githash>04eca3570488bf062d1aa9db2e1175cc08a6142f</githash>
+        <uri>git://github.com/xcore/sc_spdif</uri>
+        <version>1.3.0rc2</version>
+    </dependency>
+    <dependency repo = "sc_usb_audio">
+        <githash>79a933d56d9cdba313bc889313afb3a37d2db92f</githash>
+        <uri>git://git/apps/sc_usb_audio</uri>
+    </dependency>
+    <dependency repo = "xcommon">
+        <githash>cdcfc87c8c6047bf8d21f13222cbe9e84c6c5e01</githash>
+        <uri>git://github.com/xcore/xcommon</uri>
+    </dependency>
+    <dependency repo = "sc_xud">
+        <githash>13dc557284ba91e4c48cb0b71ae2c129c3e5c519</githash>
+        <uri>git://git/apps/sc_xud</uri>
+    </dependency>
+    <dependency repo = "sc_i2c">
+        <githash>35a77a7dfd5cb5a4c39f35fef721fcd1ea42a45b</githash>
+        <uri>git@github.com:xross/sc_i2c.git</uri>
+    </dependency>
+    <description>USB Audio Applications</description>
+    <exclude_dir>app_usb_aud_l2</exclude_dir>
+    <include_binaries>True</include_binaries>
+    <location>git://git/apps/sw_usb_audio</location>
+    <name>sw_usb_audio</name>
+    <maintainer>Ross Owen</maintainer>
+    <partnumber>XM-002774-DH</partnumber>
+    <release parenthash = "b2a76343f69bcc2dd10ded9f53c84bb76c63f7ff" version = "6.0.0alpha0" githash = "6d3ad975a906402f2cce649fc61e3caf4ab73d77"></release>
+    <release parenthash = "e3892816f8c7b6b83bfdd0b9cbd50fd4377aedd4" version = "6.0.0alpha1" githash = "9031aaaa521489a88ba01f2fe27d5a5756458e16"></release>
+    <release parenthash = "bfc454b8e28e7a5a86b55df58586e9bf57a10f55" version = "6.0.0alpha2" githash = "02d73ec64b9f522e46e75110cd29fd56cc7a0507"></release>
+    <release parenthash = "fd95bde336e9daa09f083749eaccc3955112a106" version = "6.0.0alpha3" githash = "a7822000f4c811fa25d559f128651b64c56d1958"></release>
+    <release parenthash = "d473675093ef86d9a204c930ad51fdd4273e2b39" version = "6.0.0alpha4" githash = "dc439b1bd9cb8bbfbcfac9b5fae8b19bed6282de"></release>
+    <release parenthash = "59b0b9b3ab80d2e22b37ecf496ac3ec29681573f" version = "6.0.0alpha5" githash = "5d78256098cc4bb0c89b61a795a603408fc6b4e6"></release>
+    <release parenthash = "5d78256098cc4bb0c89b61a795a603408fc6b4e6" version = "6.0.0alpha6" githash = "015c910480fef4fb9026107c790d8107c358c560"></release>
+    <release parenthash = "b6eb40ef339a31f594f71b2c34506b3c3520d40b" version = "6.0.0alpha7" githash = "8df2af287671f462f24a9a39ac77ac5fba8e1ec1"></release>
+    <release parenthash = "8df2af287671f462f24a9a39ac77ac5fba8e1ec1" version = "6.0.0alpha8" githash = "fc477792dec20889fb7fc0f3fd5790dc01323a41"></release>
+    <release parenthash = "965549485202ce4e03ee14729cf56f96a0673298" version = "6.0.0alpha9" githash = "a9d5f421fda5e57eee8b64083fe6571fa927047b"></release>
+    <release parenthash = "45a32862980f49dcf50e144f6157c64501d3332a" version = "6.0.0alpha10" githash = "21f8caee22e05d9b29c362b39059e5c6b63528de"></release>
+    <release parenthash = "57b9825b95f6dc2df4be7794e3dd25bc863c1b45" version = "6.0.0alpha11" githash = "3f6cf1b6d3e1508a321a13731a7c1dbaede20ac5"></release>
+    <release parenthash = "3f6cf1b6d3e1508a321a13731a7c1dbaede20ac5" version = "6.0.0alpha12" githash = "8af8f6c14c90990b4751cfe5cbfaf12fcb6b71b4"></release>
+    <release parenthash = "8af8f6c14c90990b4751cfe5cbfaf12fcb6b71b4" version = "6.0.0alpha13" githash = "d1797061e6b6867ccf2c888314a7653e9b2182ba"></release>
+    <release parenthash = "d1797061e6b6867ccf2c888314a7653e9b2182ba" version = "6.0.0alpha14" githash = "c76ddc79d9b47d87404ea6beed91a6e601ad0395"></release>
+    <release parenthash = "c76ddc79d9b47d87404ea6beed91a6e601ad0395" version = "6.0.0alpha15" githash = "cfb32552b3dfeb959ebeec82fedaad6af48372af"></release>
+    <release parenthash = "0bdd22547025ebbabce9ceb48f5f0a01147147c9" version = "6.0.0alpha16" githash = "ddcbb53dcea440c1f794c5d130ec72d8d3eed3ed"></release>
+    <release parenthash = "706590749f42b6e1c7cf9d9d66bc35028f3684e9" version = "6.0.0alpha17" githash = "2bef37d1eabbc6d5045f3a43821096a5bd9bb3ba"></release>
+    <release parenthash = "71c704b9d0cda2c28baa5b5b2dfe26f3fe8d7104" version = "6.0.0alpha18" githash = "49416913d81fab98b96a27fe32a3a780ce674e76"></release>
+    <release parenthash = "49416913d81fab98b96a27fe32a3a780ce674e76" version = "6.0.0alpha19" githash = "8ed7b60df442bcc7a88b8ddd0033166200398249"></release>
+    <release parenthash = "62c84fc1ed5765fc4781cd31cdbc2e4d4ea64220" version = "6.0.0alpha20" githash = "b9267185a9595a4828be5084f38f071717ae4b0f"></release>
+    <release parenthash = "67e9bc96261a9e1edae454dd380798070ae28935" version = "6.0.0alpha21" githash = "46f766bc9431eb3e2366147ab66f9d65337684cf"></release>
+    <release parenthash = "aec30eb79af7e36b7ac1b8080530e0bc21c06e6f" version = "6.0.0alpha22" githash = "e58ed8832c9440092618abc10bed659939e4e3cc"></release>
+    <release parenthash = "e58ed8832c9440092618abc10bed659939e4e3cc" version = "6.0.0alpha23" githash = "d38b13f2db41cf27bf959273b8c760122f46737d"></release>
+    <release parenthash = "bd83769594750cf37ba300e6457256c4dcfc2a8e" version = "6.0.0alpha24" githash = "11d4b663f956ae30303ffb6cfd8464f481137c67"></release>
+    <release parenthash = "96911a8d2086c4c9358e56d2eada43629d4b6ce2" version = "6.0.0alpha25" githash = "d2cb61b80ca9d555970a0e8cda91bbcc69ca342f"></release>
+    <release parenthash = "dedc5143e70aaf8c7bc3d67c81a1d19dbb0420fa" version = "6.0.0alpha25" githash = "cd8c13705e2ddb6542a1e4444f980326b7df332c"></release>
+    <release parenthash = "93f2683fe748197532e003e22b1a94e86c60b746" version = "6.0.0alpha26" githash = "7797cef5f2468bb99fb9caa7852cb2a394f526db"></release>
+    <release parenthash = "7797cef5f2468bb99fb9caa7852cb2a394f526db" version = "6.0.0alpha27" githash = "bf2569ac39d118c855c7f853f0baf70465473515"></release>
+    <release parenthash = "d5f5a90b354022b71aeb2a8c9d8a4c3d14530b78" version = "6.0.0beta0" githash = "a2c58143073007e075e6bbc572d331095f19ff96"></release>
+    <release parenthash = "a2c58143073007e075e6bbc572d331095f19ff96" version = "6.0.0beta1" githash = "9af409f2634b704d67c6660685f64db8a4368b33"></release>
+    <release parenthash = "9af409f2634b704d67c6660685f64db8a4368b33" version = "6.0.0beta2" githash = "067685e08828d1b4aec177278ead0a0dc798c253"></release>
+    <release parenthash = "067685e08828d1b4aec177278ead0a0dc798c253" version = "6.0.0beta3" githash = "f1b5f3ab858e1115a8fe8c39c93e8ed45aa4c97c"></release>
+    <release parenthash = "f1b5f3ab858e1115a8fe8c39c93e8ed45aa4c97c" version = "6.0.0beta4" githash = "2e147f77a2f52fd4729abf01857580e75789d61f"></release>
+    <release parenthash = "2a9e008090517e81dedfd9f4730bbca13e1f839c" version = "6.0.0beta5" githash = "5e1d911bcbc30940985a9a90c0982574356cf9d0"></release>
+    <release parenthash = "75f7ad9cffa09451ddcf6fee9f4e1d20109ced42" version = "6.0.0beta6" githash = "bc4815ec7a5b88cefc5adff73149aa1d28198d04"></release>
+    <release parenthash = "7b40e3a5f9e0c3834699f448b7b0acaee3f4b42b" version = "6.0.0beta7" githash = "2b73295d02b22c25705a9065267e139e83f2d758"></release>
+    <release parenthash = "8d1d353dafd24db88c171aeb006c60b148ae9bdc" version = "6.0.0beta8" githash = "dc416c8a511843d20941cbc1fba5956b8b37604f"></release>
+    <release parenthash = "3e99af046243de571c5c307b228cad920c92e42e" version = "6.0.0rc0" githash = "0ffa32b4be11213f56e99c2c72a3361b0f5363fa"></release>
+    <release parenthash = "46d83759ac66a776cd74fadfb55f9de6d6e4d85d" version = "6.0.1rc0" githash = "67e9859730ec95a01089c4e0bf7fb4a493d660c8"></release>
+    <release parenthash = "eac7faad142e87b3969ba921fd941bc1ec867704" version = "6.1.0alpha0" githash = "b1878af42eedc3a4c59c53b49dcaa9a3e547c3fa"></release>
+    <release parenthash = "da80270da6714cc472db94e2be4cbe6c64b0fbd6" version = "6.1.0rc0" githash = "1160d1f1e030f1d739295b3aa6309598d426d107"></release>
+    <release parenthash = "e78cd2d6c714883bf62db255ed1513e4db0ca080" version = "6.1.0rc1" githash = "cad7fe309becc2c1e97940e30c19239a09db23fb"></release>
+    <release parenthash = "9c0ea40d8aff4583e78d0a7a23d31683f606ee01" version = "6.1.0rc2" githash = "f21bea0d46846f51a146bc255bfd67500d428ee5"></release>
+    <release parenthash = "d0a31cec26ffa10dac1a94954a2b6589bde887e0" version = "6.1.0rc3" githash = "83a1250f9ac9028eb45b46ef72174e41346f4b26"></release>
+    <subpartnumber>XM-002775-SM</subpartnumber>
+    <vendor>XMOS</vendor>
+    <xpd_version>1.0</xpd_version>
+    <xsoftip_exclude>app_usb_aud_skc_su1</xsoftip_exclude>
+    <xsoftip_exclude>app_usb_aud_su1</xsoftip_exclude>
+    <xsoftip_exclude>app_usb_aud_l1</xsoftip_exclude>
+    <scope>Reference Design</scope>
+    <version>6.1.0rc3</version>
+</xpd>

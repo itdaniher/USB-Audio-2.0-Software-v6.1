@@ -1,0 +1,54 @@
+#menubox, #searchdiv table, #body {
+  max-width:660px;
+  width:100%;
+}
+#body {
+  max-width: 652px;
+  float: none;
+  margin: 0 auto;
+  display: block;
+  overflow:hidden;
+  padding:0;
+}
+.accountmenu {
+  right:0;
+}
+
+.version-pop:hover ul {
+  visibility: visible;
+}
+
+.note:before, .info:before, .warning:before, .danger:before, .newinxc:before,
+.note-before, .info-before, .warning-before, .danger-before, .newinxc-before {
+  position:relative;
+  left:0;
+  margin-left:0;
+}
+
+
+#content .content {
+  /*
+  padding-left:110px;
+  max-width:550px;*/
+  float:none;
+  margin:0 auto;
+}
+#content .content > h2 {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: bold;
+  /*
+  margin-left:-110px !important;
+  padding-right:150px;*/
+  border-bottom: 1px solid #ccc;
+  margin-bottom: 7px;
+  color:#444;
+}
+
+#account, #search-theme-form, .searchform .searchbox {
+  margin-right:0 !important;
+}
+
+#content h1 {
+  margin-top:35px !important;
+}

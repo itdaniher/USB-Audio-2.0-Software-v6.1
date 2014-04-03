@@ -1,0 +1,4 @@
+#!/bin/sh
+export PATH=/home/henk/jdk1.6.0_05/bin/:$PATH
+javac Arrange.java
+java Arrange > SpdifReceive.S

@@ -1,0 +1,25 @@
+ .align 4
+L11111_0:
+  LMUL r6, r5, r11, r11, r5, r5
+L11111:
+.syntax default
+  bt r6, L11111a
+.syntax architectural
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000_0
+  BLRF_u10 L000_0
+  BLRF_u10 ERROR
+  BLRF_u10 ERROR
+  BLRF_u10 L0_01
+  BLRF_u10 ERROR
+  BLRF_u10 L0_01
+  BLRF_u10 ERROR
+  BLRB_u10 L0001_0
+  BLRF_u10 L001_0
+  BLRB_u10 FASTER
+  BLRF_u10 ERROR
+  BLRB_u10 L0011_0
+  BLRF_u10 L011_0
+  BLRB_u10 L0111_0
+  BLRF_u10 SLOWER

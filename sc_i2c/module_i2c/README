@@ -1,0 +1,3 @@
+This module provides a simple library for reading and writing
+registers over the I2C protocol. The library supports writing/reading
+with the XCore acting as master.

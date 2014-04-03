@@ -1,0 +1,41 @@
+# This module_build_info is for a module that builds to a library
+
+# The LIBRARY variable needs to be set to the name of the library to
+# be built
+
+LIBRARIES = xud_l xud_g xud_s xud_s_sim
+
+# You can set flags specifically for your module by using the MODULE_XCC_FLAGS
+# variable. So the following
+#
+#   MODULE_XCC_FLAGS = $(XCC_FLAGS) -O3
+#
+# specifies that everything in the modules should have the application
+# build flags with -O3 appended (so the files will build at
+# optimization level -O3).
+#
+# You can also set MODULE_XCC_C_FLAGS, MODULE_XCC_XC_FLAGS etc..
+
+MODULE_XCC_FLAGS = $(XCC_FLAGS) -g -O3
+
+LIB_XCC_FLAGS_xud_l =  -Wall -O3 -D UIFM_MODE=2 -DXCORE_FREQ_MHz=400 -DREF_CLK_DIVIDER=3 -fasm-linenum -fcomment-asm  -fsubword-select -D ARCH_L -DXUD_FULL_PIDTABLE=1 -fschedule 
+
+LIB_XCC_FLAGS_xud_g =  -Wall -O3 -D UIFM_MODE=2 -DXCORE_FREQ_MHz=400 -DREF_CLK_DIVIDER=3 -fasm-linenum -fcomment-asm  -fsubword-select -D ARCH_G -DXUD_FULL_PIDTABLE=1 -fschedule 
+
+LIB_XCC_FLAGS_xud_s =  -Wall -O3 -D UIFM_MODE=3 -DXCORE_FREQ_MHz=400 -DREF_CLK_DIVIDER=3 -fasm-linenum -fcomment-asm  -fsubword-select -DXUD_FULL_PIDTABLE=1 -fschedule -D ARCH_L -D ARCH_S -D GLX_SUSPHY -D GLX_PWRDWN
+
+LIB_XCC_FLAGS_xud_s_sim =  -Wall -O3 -D UIFM_MODE=3 -DXCORE_FREQ_MHz=400 -DREF_CLK_DIVIDER=3 -fasm-linenum -fcomment-asm  -fsubword-select -DXUD_FULL_PIDTABLE=1 -fschedule -D ARCH_L -D ARCH_S -D GLX_SUSPHY -D GLX_PWRDWN -D SIMULATION
+
+
+EXCLUDE_FILES = XUD_Token_In.S XUD_Token_Ping.S XUD_Token_SOF.S XUD_Token_Out.S XUD_Token_Setup.S XUD_G_Crc.S
+
+# The EXPORT_SOURCE_DIRS variable are the directories that contain
+# include files for the library and any source files that you do not
+# want compiled into the library but supplied as source to the
+# application using the module.
+
+EXPORT_SOURCE_DIRS = src include
+
+
+
+EXPORTED = 1

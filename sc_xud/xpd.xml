@@ -1,0 +1,14 @@
+<?xml version="1.0" ?>
+<xpd>
+    <components></components>
+    <dependency repo = "xcommon">
+        <githash>8ca5de9ea386263221049df224c912db0534cb26</githash>
+        <uri>ssh://git@github.com/xcore/xcommon</uri>
+    </dependency>
+    <binary_only>module_xud</binary_only>
+    <git_export>False</git_export>
+    <location>git@github.com:xcore/sc_lib_example.git</location>
+    <name>sc_xud</name>
+    <xpd_version>1.0</xpd_version>
+    <version>13dc557284ba91e4c48cb0b71ae2c129c3e5c519</version>
+</xpd>

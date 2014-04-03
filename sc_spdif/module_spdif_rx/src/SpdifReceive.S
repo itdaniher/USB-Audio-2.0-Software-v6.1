@@ -1,0 +1,2226 @@
+// Copyright (c) 2011, XMOS Ltd, All rights reserved
+// This software is freely distributable under a derivative of the
+// University of Illinois/NCSA Open Source License posted in
+// LICENSE.txt and at <http://github.xcore.com/>
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Outputs 32-bit words of data
+// Only works down to 396MHz (see explanation below)
+//
+// This is an SPDIF receiver. It needs 1 thread and no memory other
+// than ~2800 bytes of program code. It can do 11025, 12000, 22050, 24000,
+// 44100, 48000, 88200, 96000, and 192000.
+//
+// Its "elegance" is in the implementation method. The signal is sampled at
+// 50 Mhz (assuming 192000, which is 12 Mbps), and the bits that come in are
+// used to drive a parser. I gratuitously used assembly (all machine generated)
+// in order to build a state machine that goes through 5 steps:
+// 1) IN 4 seralised bits from the SPDIF PHY
+// 2) BRU to these bits (that is, add the value inputted to the program counter)
+// 3) BL to the code that deals with the state transition
+// 4) Perform an LMUL to add 0/1  bits to the received word
+// 5) IN the next 4 serialised bits.
+// 6) If an error is encountered, then up a binary counter on the leds and
+// record the erroneous part of the stream.
+//
+// The program needs 40-60 ns to deal with 4 samples, and 80-100 ns to deal
+// with the final sample which limits the speed to 12 Mbps or 192,000 samples/s
+// stereo. There are around 80 states, each with a 16-long jumptable.
+//
+// The bit streams are 3.072, 6.144, or 12.288 Mbits/s - we sample them at
+// 12.5, 25, or 50 MHz.
+// So we get "4.something" samples per bit.
+//
+// Normally samples 0000/1111 mean '0' and 0011/1100 mean '1'. Any other value
+// means 'Error'. However, since it is slightly more than 4, it could be '00000'
+// rather than '0000'. Hence, if you sample four bits at a time, you slowly go
+// out of sync. The code implements a state machine; state '000' means 'I have
+// seen three zeros that I haven't decided what to do with' So if you then
+// read samples '0111' then you know that you have seen a logical '0' (0000),
+// and you go to state '111' because there are still three ones to deal with.
+// So, if your clock is too low, you will sample sometimes only 3 times per bit,
+// and you are toast. You can run it at, say, 360 Mhz, but you will have to
+// divide the clock by 7 to get a 51.4 MHz clock... Or divide the 90 Mhz clock
+// by 3 to get a 30 MHz clock that can sample 96 KHz. There is also a subtlety
+// that rise and fall times are not equal, and hence '0111' and '1110' are
+// actually ones.
+#include <xs1.h>
+
+.syntax architectural
+
+#define STACK  9
+    .globl   SpdifReceive
+.linkset SpdifReceive.nstackwords,STACK
+.globl   SpdifReceive.nstackwords
+.linkset SpdifReceive.maxthreads,0
+.globl   SpdifReceive.maxthreads
+.linkset SpdifReceive.maxtimers,0
+.globl   SpdifReceive.maxtimers
+.linkset SpdifReceive.maxchanends,0
+.globl   SpdifReceive.maxchanends
+.globl   parseSpDifc
+.linkset parseSpDifc.nstackwords,0
+.globl   parseSpDifc.nstackwords
+
+.cc_top   SpdifReceive.func, SpdifReceive
+
+BERROR:
+  STWSP    lr, 8
+  BLRF parseSpDifE
+  
+parseSpDifTerminate:
+    INCT   r11, r1
+#ifdef TEST
+parseSpDifE:
+#endif
+    CLRSR  XS1_SR_EEBLE_MASK
+    CLRSR  XS1_SR_FAST_MASK
+    EDU    r1
+    OR     r0, r4, r4
+    OR     r1, r5, r5
+    LDWSP  r2, 8
+    LDWSP  r4, 1
+    LDWSP  r5, 2
+    LDWSP  r6, 3
+    LDWSP  r7, 4
+    LDWSP  r8, 5
+    LDWSP  r9, 6
+    LDWSP  r10, 7
+    RETSP  STACK
+
+
+
+    // Parse SPDIF entry point
+
+    // arguments:
+    //   void SpdifReceive(
+    //     in buffered port:4 p     r0
+    //     streaming chanend c      r1
+    //     int initial_divider      r2
+    //     clock clk                r3
+    //   );
+
+SpdifReceive:
+    //LDC     r4, 0xf
+    //AND     r4, r3, r4
+    //BRFT    r4, parseSpDifc
+    SETCI   r3, 7   // XS1_SETC_RUNR_STOP
+    SETD    r3, r2
+    SETCLK  r0, r3
+    SETCI   r3, 15  // XS1_SETC_RUNR_START
+#ifdef INV
+    SETCI   r0, 0x600F  // invert
+#endif
+    SETSR  XS1_SR_FAST_MASK
+parseSpDifc:
+    ENTSP STACK
+    STWSP   r4, 1
+    STWSP   r5, 2
+    STWSP   r6, 3
+    STWSP   r7, 4
+    STWSP   r8, 5
+    STWSP   r9, 6
+    STWSP   r10, 7
+    CLRSR   XS1_SR_EEBLE_MASK
+    EDU     r1
+.syntax default
+    ldap    r11, parseSpDifTerminate
+    setv    res[r1], r11
+.syntax architectural
+    EEU     r1
+    SETSR   XS1_SR_EEBLE_MASK
+
+    BLRF startParsing
+
+    // Entry points for slowing down and speeding up
+    
+BFASTER:
+#ifndef TEST
+    GETD r4, r3
+  SHRI r4, r4, 1
+  BRFT r4, setClock
+    BLRF startParsing
+#endif
+BSLOWER:
+#ifndef TEST
+  GETD r4, r3
+  SHLI  r4, r4, 1
+  LDC r6, 32
+  LSU  r10, r4, r6
+  BRFF r10, startParsing
+setClock:
+  SETCI r3, 7
+  SETD r3, r4
+  SETCI r3, 15
+#endif
+  BLRF startParsing
+
+
+    
+startParsing:    
+  LDC r5, 0x5555
+  LDC r6, 0x0
+  LDC r7, 0x1
+  LDC r8, 0x1A
+  LDC r9, 0x2
+  LDC r10, 0x4
+  LDC r11, 0x0
+#ifndef TEST
+parseSpDifE:
+#endif
+  IN   r4, r0
+  IN   r4, r0
+  SHLI r4, r4, 1
+  BRU  r4
+  BLRF_lu10 L0000
+  BLRF_lu10 L000
+  BLRF_lu10 L00
+  BLRF_lu10 L00
+  BLRF_lu10 L0
+  BLRF_lu10 L0
+  BLRF_lu10 L0
+  BLRF_lu10 L0
+  BLRF_lu10 L1
+  BLRF_lu10 L1
+  BLRF_lu10 L1
+  BLRF_lu10 L1
+  BLRF_lu10 L11
+  BLRF_lu10 L11
+  BLRF_lu10 L111
+  BLRF_lu10 L1111
+  
+
+
+
+L11111_U:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000
+  BLRF_u10 L000
+  BLRB_u10 BERROR
+  BLRF_u10 L00
+  BLRF_u10 L0_1
+  BLRB_u10 BERROR
+  BLRF_u10 L0_1
+  BLRF_u10 L0
+  BLRF_u10 L0001
+  BLRF_u10 L001
+  BLRB_u10 BERROR
+  BLRF_u10 L01
+  BLRF_u10 L0011
+  BLRF_u10 L011
+  BLRF_u10 L0111
+  BLRB_u10 BERROR
+
+.align 4
+.syntax default
+L0111_CHOICE:
+  bt r6, L111_TZ
+.syntax architectural
+L0111_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L0111
+.align 4
+L0111_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L0111:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0001_1
+  BLRB_u10 BERROR
+  BLRB_u10 BFASTER
+  BLRB_u10 BERROR
+  BLRF_u10 L0011_1
+  BLRB_u10 BERROR
+  BLRB_u10 L0111_1
+  BLRB_u10 BERROR
+
+
+L11100_S:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L111_UY
+  BLRF_u10 L1111_UZ
+
+
+L111111_S:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 BERROR
+  BLRF_u10 L000_TX
+  BLRB_u10 BERROR
+  BLRF_u10 L0_X
+  BLRF_u10 L0_X
+  BLRF_u10 L0_X
+  BLRF_u10 L0_X
+  BLRB_u10 BERROR
+  BLRF_u10 L1_UX
+  BLRF_u10 L1_UX
+  BLRB_u10 BERROR
+  BLRF_u10 L1_UX
+  BLRF_u10 L11_UX
+  BLRF_u10 L11_UX
+  BLRF_u10 L111_UY
+  BLRB_u10 BERROR
+
+
+L111111_U:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000
+  BLRF_u10 L000
+  BLRB_u10 BERROR
+  BLRF_u10 L00
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0_1
+  BLRB_u10 BERROR
+  BLRF_u10 L0001
+  BLRF_u10 L001
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0011
+  BLRF_u10 L011
+  BLRB_u10 L0111
+  BLRB_u10 BERROR
+
+
+L1111111_U:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000
+  BLRF_u10 L000
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0_1
+  BLRB_u10 BERROR
+  BLRF_u10 L0001
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0011
+  BLRB_u10 BERROR
+  BLRB_u10 L0111
+  BLRB_u10 BERROR
+
+
+L00111:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0001_1
+  BLRB_u10 BERROR
+  BLRB_u10 BFASTER
+  BLRB_u10 BERROR
+  BLRF_u10 L0011_1
+  BLRB_u10 BERROR
+  BLRB_u10 L0111_1
+  BLRB_u10 BERROR
+
+
+.align 4
+L0011_1:
+  LMUL r6,r5,r5,r7,r5,r7
+  BRFU L0011
+.align 4
+L0011_0:
+  LMUL r6, r5, r11, r11, r5, r5
+L0011:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000_1
+  BLRF_u10 L000_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0001_1
+  BLRF_u10 L001_1
+  BLRB_u10 BFASTER
+  BLRB_u10 BERROR
+  BLRB_u10 L0011_1
+  BLRF_u10 L011_1
+  BLRB_u10 L0111_1
+  BLRB_u10 BERROR
+
+
+.align 4
+L1111_UY:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L1111_U
+.align 4
+L1111_UZ:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r9,r11
+L1111_U:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000
+  BLRF_u10 L000
+  BLRB_u10 BERROR
+  BLRF_u10 L00
+  BLRF_u10 L0_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0
+  BLRF_u10 L0001
+  BLRF_u10 L001
+  BLRB_u10 BERROR
+  BLRF_u10 L01
+  BLRB_u10 L0011
+  BLRF_u10 L011
+  BLRB_u10 L0111
+  BLRB_u10 L1111111_U
+
+
+L1111100_S:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 BERROR
+  BLRF_u10 L000_Y
+  BLRF_u10 L00_X
+  BLRF_u10 L00_Y
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0_X
+  BLRF_u10 L0_Y
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L01_Y
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L111_UX
+  BLRB_u10 L1111_UY
+
+.align 4
+L011_CHOICE:
+.syntax default
+  bt r6, L11_TZ
+.syntax architectural
+L011_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L011
+.align 4
+L011_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L011:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000_1
+  BLRF_u10 L000_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0001_1
+  BLRF_u10 L001_1
+  BLRB_u10 BFASTER
+  BLRB_u10 BERROR
+  BLRB_u10 L0011_1
+  BLRB_u10 L011_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+
+.align 4
+L0001_CHOICE:
+.syntax default
+  bt r6, L1_TZ
+.syntax architectural
+L0001_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L0001
+.align 4
+L0001_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L0001:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000_1
+  BLRF_u10 L000_1
+  BLRB_u10 BERROR
+  BLRF_u10 L11100_0
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0_00
+  BLRB_u10 L0001_1
+  BLRF_u10 L001_1
+  BLRB_u10 BFASTER
+  BLRF_u10 L1_01
+  BLRB_u10 L0011_1
+  BLRB_u10 L011_1
+  BLRB_u10 BERROR
+  BLRF_u10 L11111_0
+
+.align 4
+L001_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L001
+.align 4
+L001_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L001:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000_1
+  BLRF_u10 L000_1
+  BLRB_u10 BERROR
+  BLRF_u10 L00_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 L0001_1
+  BLRB_u10 L001_1
+  BLRB_u10 BFASTER
+  BLRF_u10 L01_1
+  BLRB_u10 BERROR
+  BLRB_u10 L011_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+
+
+.align 4
+L00011_0:
+  LMUL r6, r5, r11, r11, r5, r5
+L00011:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0_00
+  BLRB_u10 L0001_1
+  BLRF_u10 L1_01
+  BLRB_u10 BFASTER
+  BLRB_u10 BERROR
+  BLRB_u10 L0011_1
+  BLRF_u10 L11_01
+  BLRB_u10 L0111_1
+  BLRF_u10 L111111_0
+
+ .align 4
+L11111_0:
+  LMUL r6, r5, r11, r11, r5, r5
+L11111:
+.syntax default
+  bt r6, L11111a
+.syntax architectural
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000_0
+  BLRF_u10 L000_0
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0_01
+  BLRB_u10 BERROR
+  BLRF_u10 L0_01
+  BLRB_u10 BERROR
+  BLRB_u10 L0001_0
+  BLRB_u10 L001_0
+  BLRB_u10 BFASTER
+  BLRB_u10 BERROR
+  BLRB_u10 L0011_0
+  BLRB_u10 L011_0
+  BLRB_u10 L0111_0
+  BLRB_u10 BSLOWER
+
+
+L11000:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 BERROR
+  BLRF_u10 L1000_1
+  BLRB_u10 BERROR
+  BLRF_u10 L1100_1
+  BLRB_u10 BERROR
+  BLRB_u10 BFASTER
+  BLRB_u10 BERROR
+  BLRF_u10 L1110_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L1111_1
+
+
+.align 4
+L111_UX:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+  BRFU L111_U
+.align 4
+L111_UY:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L111_U
+.align 4
+L111_UZ:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r9,r11
+L111_U:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000
+  BLRF_u10 L000
+  BLRB_u10 BERROR
+  BLRF_u10 L00
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0
+  BLRB_u10 L0001
+  BLRB_u10 L001
+  BLRB_u10 BERROR
+  BLRF_u10 L01
+  BLRB_u10 L0011
+  BLRB_u10 L011
+  BLRB_u10 L0111
+  BLRB_u10 L1111111_U
+
+ .align 4
+L00000_0:
+  LMUL r6, r5, r11, r11, r5, r5
+L00000:
+.syntax default
+  bt r6, L00000a
+.syntax architectural
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 BSLOWER
+  BLRF_u10 L1000_0
+  BLRF_u10 L100_0
+  BLRF_u10 L1100_0
+  BLRB_u10 BERROR
+  BLRB_u10 BFASTER
+  BLRF_u10 L110_0
+  BLRF_u10 L1110_0
+  BLRB_u10 BERROR
+  BLRF_u10 L1_01
+  BLRB_u10 BERROR
+  BLRF_u10 L1_01
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L111_0
+  BLRF_u10 L1111_0
+
+.align 4
+L0_Y:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L0
+.align 4
+L0_X:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+  BRFU L0
+.align 4
+L0_01:
+  LMUL r6,r5,r5,r10,r7,r11
+  BRFU L0
+.align 4
+L0_1:
+  LMUL r6,r5,r5,r7,r5,r7
+  BRFU L0
+.align 4
+L0_00:
+  LMUL r6, r5, r11, r11, r5, r5
+L0_0:
+  LMUL r6, r5, r11, r11, r5, r5
+L0:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L00000
+  BLRB_u10 BERROR
+  BLRF_u10 L00_1
+  BLRF_u10 L00_1
+  BLRB_u10 L0_1
+  BLRB_u10 BFASTER
+  BLRB_u10 L0_1
+  BLRB_u10 L0_1
+  BLRF_u10 L1_0
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 L00011
+  BLRB_u10 BERROR
+  BLRB_u10 L00111
+  BLRB_u10 BERROR
+
+
+.align 4
+L0000_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L0000
+.align 4
+L0000_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L0000:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000000
+  BLRF_u10 L1000_0
+  BLRF_u10 L100_0
+  BLRF_u10 L1100_0
+  BLRF_u10 L10_CHOICE
+  BLRB_u10 BFASTER
+  BLRF_u10 L110_0
+  BLRF_u10 L1110_0
+  BLRF_u10 L1_S
+  BLRF_u10 L1_01
+  BLRB_u10 BERROR
+  BLRF_u10 L1_01
+  BLRF_u10 L11_S
+  BLRB_u10 BERROR
+  BLRF_u10 L111_S
+  BLRF_u10 L1111_0
+
+.align 4
+L100_CHOICE:
+.syntax default
+  bt r6, L00_TZ
+.syntax architectural
+L100_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L100
+.align 4
+L100_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L100:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 L100_1
+  BLRF_u10 L1100_1
+  BLRB_u10 BERROR
+  BLRB_u10 BFASTER
+  BLRF_u10 L110_1
+  BLRF_u10 L1110_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L111_1
+  BLRF_u10 L1111_1
+
+.align 4
+L000_Y:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L000
+.align 4
+L000_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L000
+.align 4
+L000_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L000:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000000
+  BLRB_u10 L000_1
+  BLRB_u10 L100_0
+  BLRF_u10 L00_1
+  BLRF_u10 L10_0
+  BLRB_u10 BFASTER
+  BLRF_u10 L110_0
+  BLRF_u10 L1110_0
+  BLRF_u10 L1_S
+  BLRB_u10 L001_1
+  BLRB_u10 BERROR
+  BLRF_u10 L01_1
+  BLRF_u10 L11_S
+  BLRB_u10 BFASTER
+  BLRF_u10 L111_0
+  BLRF_u10 L1111_0
+
+
+.align 4
+L1100_1:
+  LMUL r6,r5,r5,r7,r5,r7
+  BRFU L1100
+.align 4
+L1100_0:
+  LMUL r6, r5, r11, r11, r5, r5
+L1100:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 BERROR
+  BLRF_u10 L1000_1
+  BLRB_u10 L100_1
+  BLRB_u10 L1100_1
+  BLRB_u10 BERROR
+  BLRB_u10 BFASTER
+  BLRF_u10 L110_1
+  BLRF_u10 L1110_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L111_1
+  BLRF_u10 L1111_1
+
+.align 4
+L01_Y:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L01
+.align 4
+L01_CHOICE:
+.syntax default
+  bt r6, L1_TZ
+.syntax architectural
+L01_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L01
+.align 4
+L01_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L01:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 BERROR
+  BLRB_u10 L000_1
+  BLRB_u10 BERROR
+  BLRF_u10 L00_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 L001_1
+  BLRB_u10 BFASTER
+  BLRB_u10 L01_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+
+
+.align 4
+L000_TY:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L000_T
+.align 4
+L000_TZ:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r9,r11
+  BRFU L000_T
+.align 4
+L000_TX:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+L000_T:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 BERROR
+  BLRB_u10 L000
+  BLRB_u10 BERROR
+  BLRF_u10 L00
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 L0
+  BLRB_u10 BERROR
+  BLRB_u10 L001
+  BLRB_u10 BERROR
+  BLRB_u10 L01
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 L111_U
+  BLRB_u10 L1111_U
+
+
+.align 4
+L1111_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L1111
+.align 4
+L1111_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L1111:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000_0
+  BLRF_u10 L000_S
+  BLRB_u10 BERROR
+  BLRF_u10 L00_S
+  BLRB_u10 L0_01
+  BLRB_u10 BERROR
+  BLRB_u10 L0_01
+  BLRF_u10 L0_S
+  BLRB_u10 L0001_0
+  BLRB_u10 L001_0
+  BLRB_u10 BFASTER
+  BLRB_u10 L01_CHOICE
+  BLRB_u10 L0011_0
+  BLRB_u10 L011_0
+  BLRB_u10 L0111_0
+  BLRF_u10 L1111111
+
+
+.align 4
+L11100_0:
+  LMUL r6, r5, r11, r11, r5, r5
+L11100:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L000000_0
+  BLRF_u10 L1000_1
+  BLRF_u10 L00_01
+  BLRB_u10 L1100_1
+  BLRB_u10 BERROR
+  BLRB_u10 BFASTER
+  BLRB_u10 L0_01
+  BLRF_u10 L1110_1
+  BLRF_u10 L1_00
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 L1111_1
+
+  .align 4
+L000000_0:
+  LMUL r6, r5, r11, r11, r5, r5
+L000000:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 BSLOWER
+  BLRF_u10 L1000_CHOICE
+  BLRF_u10 L00_TZ
+  BLRF_u10 L00_TZ
+  BLRF_u10 L0_TZ
+  BLRB_u10 BFASTER
+  BLRF_u10 L0_TZ
+  BLRF_u10 L1110_CHOICE
+  BLRB_u10 BSLOWER
+  BLRF_u10 L1_UZ
+  BLRB_u10 BERROR
+  BLRF_u10 L1_UZ
+  BLRF_u10 L11_S
+  BLRB_u10 BERROR
+  BLRF_u10 L111_S
+  BLRF_u10 L1111_S
+
+.align 4
+L1110_CHOICE:
+.syntax default
+  bt r6, L0_TZ
+.syntax architectural
+L1110_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L1110
+.align 4
+L1110_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L1110:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L00000_0
+  BLRB_u10 BERROR
+  BLRB_u10 L100_1
+  BLRB_u10 L1100_1
+  BLRB_u10 L0_01
+  BLRB_u10 BFASTER
+  BLRF_u10 L110_1
+  BLRB_u10 L1110_1
+  BLRF_u10 L1_00
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 L00011_0
+  BLRB_u10 BERROR
+  BLRF_u10 L111_1
+  BLRB_u10 L1111_1
+
+.align 4
+.syntax default
+L1000_CHOICE:
+  bt r6, L000_TZ
+.syntax architectural
+L1000_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L1000
+.align 4
+L1000_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L1000:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 BERROR
+  BLRB_u10 L1000_1
+  BLRB_u10 BERROR
+  BLRB_u10 L1100_1
+  BLRB_u10 BERROR
+  BLRB_u10 BFASTER
+  BLRB_u10 BERROR
+  BLRB_u10 L1110_1
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 L1111_1
+
+.align 4
+L1_UY:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L1_U
+.align 4
+L1_UX:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+  BRFU L1_U
+.align 4
+L1_UZ:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r9,r11
+L1_U:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000
+  BLRB_u10 L000
+  BLRB_u10 BERROR
+  BLRF_u10 L00
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 L0
+  BLRB_u10 L0001
+  BLRB_u10 L001
+  BLRB_u10 BERROR
+  BLRB_u10 L01
+  BLRB_u10 L0011
+  BLRB_u10 L011
+  BLRB_u10 L0111
+  BLRB_u10 L11111_U
+
+.align 4
+L00_Y:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L00
+.align 4
+L00_X:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+  BRFU L00
+.align 4
+L00_0:
+  LMUL r6,r5,r11,r11,r5,r5
+  BRFU L00
+.align 4
+L00_01:
+  LMUL r6,r5,r5,r10,r7,r11
+  BRFU L00
+.align 4
+L00_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L00:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L000000
+  BLRB_u10 L000_1
+  BLRB_u10 L00_1
+  BLRB_u10 L00_1
+  BLRF_u10 L10_0
+  BLRB_u10 BFASTER
+  BLRB_u10 L0_1
+  BLRB_u10 L0_1
+  BLRF_u10 L1_S
+  BLRB_u10 BERROR
+  BLRB_u10 BFASTER
+  BLRB_u10 L01_1
+  BLRF_u10 L11_0
+  BLRB_u10 BERROR
+  BLRF_u10 L111_0
+  BLRB_u10 BERROR
+
+.align 4
+L1_S:
+.syntax default
+  bf r6, L1_0
+.syntax architectural
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 BERROR
+  BLRB_u10 L000_TZ
+  BLRB_u10 BERROR
+  BLRB_u10 L11100_S
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRF_u10 L0_TY
+  BLRB_u10 L1_UZ
+  BLRB_u10 L1_UZ
+  BLRB_u10 BERROR
+  BLRB_u10 L1_UZ
+  BLRF_u10 L11_UZ
+  BLRF_u10 L11_UZ
+  BLRB_u10 BERROR
+  BLRF_u10 L11111_S
+
+
+.align 4
+L11_UX:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+  BRFU L11_U
+.align 4
+L11_UY:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L11_U
+.align 4
+L11_UZ:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r9,r11
+L11_U:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000
+  BLRB_u10 L000
+  BLRB_u10 BERROR
+  BLRB_u10 L00
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 L0
+  BLRB_u10 L0001
+  BLRB_u10 L001
+  BLRB_u10 BERROR
+  BLRB_u10 L01
+  BLRB_u10 L0011
+  BLRB_u10 L011
+  BLRB_u10 L0111
+  BLRB_u10 L111111_U
+
+
+.align 4
+L0_TZ:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r9,r11
+  BRFU L0_T
+.align 4
+L0_TX:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+  BRFU L0_T
+.align 4
+L0_TY:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+L0_T:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 BERROR
+  BLRB_u10 L000
+  BLRB_u10 L00
+  BLRB_u10 L00
+  BLRB_u10 L0
+  BLRB_u10 BERROR
+  BLRB_u10 L0
+  BLRB_u10 L0
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 L11_U
+  BLRB_u10 BERROR
+  BLRB_u10 L111_U
+  BLRB_u10 L1111_U
+
+
+L111110_S:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 BERROR
+  BLRB_u10 L000_Y
+  BLRB_u10 L00_Y
+  BLRB_u10 L00_Y
+  BLRB_u10 L0_X
+  BLRB_u10 BERROR
+  BLRB_u10 L0_Y
+  BLRB_u10 L0_Y
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 BERROR
+  BLRB_u10 L11_UX
+  BLRB_u10 BERROR
+  BLRB_u10 L111_UY
+  BLRB_u10 L1111_UY
+
+.align 4
+L11_S:
+.syntax default
+  bf r6, L11_0
+.syntax architectural
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRB_u10 L000_TY
+  BLRF_u10 FERROR
+  BLRF_u10 L00_TY
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L111110_S
+  BLRB_u10 L1_UZ
+  BLRB_u10 L1_UZ
+  BLRF_u10 FERROR
+  BLRB_u10 L1_UY
+  BLRB_u10 L11_UZ
+  BLRB_u10 L11_UZ
+  BLRB_u10 L111_UZ
+  BLRB_u10 L111111_S
+
+  .align 4
+L111111_0:
+  LMUL r6, r5, r11, r11, r5, r5
+L111111:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000_S
+  BLRF_u10 L000_S
+  BLRF_u10 FERROR
+  BLRF_u10 L00_S
+  BLRF_u10 L0_UZ
+  BLRF_u10 FERROR
+  BLRF_u10 L0_UZ
+  BLRF_u10 FSLOWER
+  BLRB_u10 L0001_CHOICE
+  BLRF_u10 L1_TZ
+  BLRF_u10 FFASTER
+  BLRF_u10 L1_TZ
+  BLRF_u10 L11_TZ
+  BLRF_u10 L11_TZ
+  BLRB_u10 L0111_CHOICE
+  BLRF_u10 FSLOWER
+
+.align 4
+L111_S:
+.syntax default
+  bf r6, L111_0
+.syntax architectural
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRB_u10 L000_TY
+  BLRF_u10 FERROR
+  BLRB_u10 L1111100_S
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L0_TX
+  BLRB_u10 L1_UY
+  BLRB_u10 L1_UY
+  BLRF_u10 FERROR
+  BLRB_u10 L1_UY
+  BLRB_u10 L11_UZ
+  BLRB_u10 L11_UY
+  BLRB_u10 L111_UZ
+  BLRF_u10 L1111111_S
+
+
+L000000_U:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRB_u10 L1000
+  BLRB_u10 L100
+  BLRB_u10 L1100
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 L110
+  BLRB_u10 L1110
+  BLRF_u10 FERROR
+  BLRF_u10 L1_1
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 L11
+  BLRF_u10 FERROR
+  BLRF_u10 L111
+  BLRB_u10 L1111
+
+.align 4
+L1111_S:
+.syntax default
+  bf r6, L1111_0
+.syntax architectural
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L000_TY
+  BLRB_u10 L000_TX
+  BLRF_u10 FERROR
+  BLRF_u10 L00_TX
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L0_TX
+  BLRB_u10 L1_UY
+  BLRB_u10 L1_UY
+  BLRF_u10 FERROR
+  BLRB_u10 L1_UY
+  BLRB_u10 L11_UY
+  BLRB_u10 L11_UY
+  BLRB_u10 L111_UY
+  BLRF_u10 L1111111_S
+
+
+L00000_U:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRB_u10 L1000
+  BLRB_u10 L100
+  BLRB_u10 L1100
+  BLRF_u10 L10
+  BLRF_u10 FERROR
+  BLRF_u10 L110
+  BLRB_u10 L1110
+  BLRF_u10 L1
+  BLRF_u10 L1_1
+  BLRF_u10 FERROR
+  BLRF_u10 L1_1
+  BLRF_u10 L11
+  BLRF_u10 FERROR
+  BLRF_u10 L111
+  BLRB_u10 L1111
+
+
+L11111_S:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRB_u10 L000_TX
+  BLRF_u10 FERROR
+  BLRF_u10 L00_TX
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L0_TX
+  BLRB_u10 L1_UX
+  BLRB_u10 L1_UX
+  BLRF_u10 FERROR
+  BLRB_u10 L1_UX
+  BLRB_u10 L11_UY
+  BLRB_u10 L11_UY
+  BLRB_u10 L111_UY
+  BLRF_u10 FERROR
+
+
+.align 4
+L00_TY:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L00_T
+.align 4
+L00_TZ:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r9,r11
+  BRFU L00_T
+.align 4
+L00_TX:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+L00_T:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRB_u10 L000
+  BLRB_u10 L00
+  BLRB_u10 L00
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L0
+  BLRB_u10 L0
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L01
+  BLRB_u10 L11_U
+  BLRF_u10 FERROR
+  BLRB_u10 L111_U
+  BLRB_u10 L1111_U
+
+.align 4
+L110_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L110
+.align 4
+L110_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L110:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L100_1
+  BLRF_u10 FERROR
+  BLRF_u10 L10_1
+  BLRF_u10 FFASTER
+  BLRB_u10 L110_1
+  BLRB_u10 L1110_1
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 L11_1
+  BLRF_u10 FERROR
+  BLRF_u10 L111_1
+  BLRB_u10 L1111_1
+
+.align 4
+L111_Y:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L111
+.align 4
+L111_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L111
+.align 4
+L111_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L111:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000_0
+  BLRB_u10 L000_0
+  BLRF_u10 FFASTER
+  BLRF_u10 L00_S
+  BLRF_u10 L10_1
+  BLRF_u10 FERROR
+  BLRB_u10 L110_1
+  BLRF_u10 L0_S
+  BLRB_u10 L0001_0
+  BLRB_u10 L001_0
+  BLRF_u10 FFASTER
+  BLRB_u10 L01_0
+  BLRF_u10 L11_1
+  BLRB_u10 L011_0
+  BLRB_u10 L111_1
+  BLRF_u10 L1111111
+
+
+L1111111_S:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L0_X
+  BLRF_u10 FERROR
+  BLRB_u10 L0_X
+  BLRF_u10 FERROR
+  BLRB_u10 L1_UX
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L11_UX
+  BLRB_u10 L11_UX
+  BLRB_u10 L111_UX
+  BLRF_u10 FERROR
+
+.align 4
+L1_Y:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L1
+.align 4
+L1_X:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+  BRFU L1
+.align 4
+L1_01:
+  LMUL r6,r5,r5,r10,r7,r11
+  BRFU L1
+.align 4
+L1_1:
+  LMUL r6,r5,r5,r7,r5,r7
+  BRFU L1
+.align 4
+L1_00:
+  LMUL r6, r5, r11, r11, r5, r5
+L1_0:
+  LMUL r6, r5, r11, r11, r5, r5
+L1:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRB_u10 L11000
+  BLRF_u10 FERROR
+  BLRB_u10 L11100
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L0_0
+  BLRB_u10 L1_1
+  BLRB_u10 L1_1
+  BLRF_u10 FFASTER
+  BLRB_u10 L1_1
+  BLRF_u10 L11_1
+  BLRF_u10 L11_1
+  BLRF_u10 FERROR
+  BLRB_u10 L11111
+
+
+L0000000_U:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRB_u10 L1000
+  BLRF_u10 FERROR
+  BLRB_u10 L1100
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L1110
+  BLRF_u10 FERROR
+  BLRB_u10 L1_1
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L111
+  BLRB_u10 L1111
+
+.align 4
+L11_Y:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L11
+.align 4
+L11_X:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+  BRFU L11
+.align 4
+L11_0:
+  LMUL r6,r5,r11,r11,r5,r5
+  BRFU L11
+.align 4
+L11_01:
+  LMUL r6,r5,r5,r10,r7,r11
+  BRFU L11
+.align 4
+L11_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L11:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRB_u10 L000_0
+  BLRF_u10 FERROR
+  BLRB_u10 L00_0
+  BLRF_u10 L10_1
+  BLRF_u10 FFASTER
+  BLRF_u10 FERROR
+  BLRF_u10 L0_S
+  BLRB_u10 L1_1
+  BLRB_u10 L1_1
+  BLRF_u10 FFASTER
+  BLRB_u10 L01_0
+  BLRB_u10 L11_1
+  BLRB_u10 L11_1
+  BLRB_u10 L111_1
+  BLRB_u10 L111111
+
+.align 4
+L0_UY:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L0_U
+.align 4
+L0_UX:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+  BRFU L0_U
+.align 4
+L0_UZ:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r9,r11
+L0_U:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L00000_U
+  BLRB_u10 L1000
+  BLRB_u10 L100
+  BLRB_u10 L1100
+  BLRF_u10 L10
+  BLRF_u10 FERROR
+  BLRB_u10 L110
+  BLRB_u10 L1110
+  BLRB_u10 L1
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L11
+  BLRF_u10 FERROR
+  BLRB_u10 L111
+  BLRB_u10 L1111
+
+
+.align 4
+L00_UX:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+  BRFU L00_U
+.align 4
+L00_UY:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L00_U
+.align 4
+L00_UZ:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r9,r11
+L00_U:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L000000_U
+  BLRB_u10 L1000
+  BLRB_u10 L100
+  BLRB_u10 L1100
+  BLRF_u10 L10
+  BLRF_u10 FERROR
+  BLRB_u10 L110
+  BLRB_u10 L1110
+  BLRB_u10 L1
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L11
+  BLRF_u10 FERROR
+  BLRB_u10 L111
+  BLRB_u10 L1111
+
+.align 4
+L10_Y:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L10
+.align 4
+L10_CHOICE:
+.syntax default
+  bt r6, L0_TZ
+.syntax architectural
+L10_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L10
+.align 4
+L10_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L10:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L10_1
+  BLRF_u10 FFASTER
+  BLRB_u10 L110_1
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L11_1
+  BLRF_u10 FERROR
+  BLRB_u10 L111_1
+  BLRF_u10 FERROR
+
+
+.align 4
+L000_UX:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+  BRFU L000_U
+.align 4
+L000_UY:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L000_U
+.align 4
+L000_UZ:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r9,r11
+L000_U:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000000_U
+  BLRB_u10 L1000
+  BLRB_u10 L100
+  BLRB_u10 L1100
+  BLRB_u10 L10
+  BLRF_u10 FERROR
+  BLRB_u10 L110
+  BLRB_u10 L1110
+  BLRB_u10 L1
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L11
+  BLRF_u10 FERROR
+  BLRB_u10 L111
+  BLRB_u10 L1111
+
+
+L0000000:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FSLOWER
+  BLRB_u10 L000_TZ
+  BLRB_u10 L00_TZ
+  BLRB_u10 L00_TZ
+  BLRF_u10 FERROR
+  BLRF_u10 FFASTER
+  BLRF_u10 FERROR
+  BLRB_u10 L0_TY
+  BLRF_u10 FSLOWER
+  BLRB_u10 L1_UZ
+  BLRF_u10 FERROR
+  BLRB_u10 L1_UZ
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L111_S
+  BLRB_u10 L1111_S
+
+
+.align 4
+L0000_UY:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L0000_U
+.align 4
+L0000_UZ:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r9,r11
+L0000_U:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000000_U
+  BLRB_u10 L1000
+  BLRB_u10 L100
+  BLRB_u10 L1100
+  BLRB_u10 L10
+  BLRF_u10 FERROR
+  BLRB_u10 L110
+  BLRB_u10 L1110
+  BLRB_u10 L1
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L1_1
+  BLRB_u10 L11
+  BLRF_u10 FERROR
+  BLRB_u10 L111
+  BLRB_u10 L1111
+
+.align 4
+L0_S:
+.syntax default
+  bf r6, L0_0
+.syntax architectural
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L00000_S
+  BLRF_u10 FERROR
+  BLRB_u10 L00_UZ
+  BLRB_u10 L00_UZ
+  BLRB_u10 L0_UZ
+  BLRF_u10 FERROR
+  BLRB_u10 L0_UZ
+  BLRB_u10 L0_UZ
+  BLRF_u10 L1_TY
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 L00011_S
+  BLRF_u10 FERROR
+  BLRF_u10 L111_TZ
+  BLRF_u10 FERROR
+
+.align 4
+L000_S:
+.syntax default
+  bf r6, L000_0
+.syntax architectural
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000000_S
+  BLRB_u10 L000_UZ
+  BLRB_u10 L00_UY
+  BLRB_u10 L00_UZ
+  BLRB_u10 L0_UY
+  BLRF_u10 FERROR
+  BLRB_u10 L0_UY
+  BLRB_u10 L0_UY
+  BLRF_u10 L1_TX
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 L0000011_S
+  BLRF_u10 FERROR
+  BLRF_u10 L111_TY
+  BLRF_u10 FERROR
+
+.align 4
+L00_S:
+.syntax default
+  bf r6, L00_0
+.syntax architectural
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L000000_S
+  BLRB_u10 L000_UZ
+  BLRB_u10 L00_UZ
+  BLRB_u10 L00_UZ
+  BLRB_u10 L0_UY
+  BLRF_u10 FERROR
+  BLRB_u10 L0_UZ
+  BLRB_u10 L0_UZ
+  BLRF_u10 L000001_S
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 L11_TY
+  BLRF_u10 FERROR
+  BLRF_u10 L111_TY
+  BLRF_u10 FERROR
+
+
+.align 4
+L111_TY:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L111_T
+.align 4
+L111_TZ:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r9,r11
+  BRFU L111_T
+.align 4
+L111_TX:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+L111_T:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000_U
+  BLRB_u10 L000_U
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L10
+  BLRF_u10 FERROR
+  BLRB_u10 L110
+  BLRF_u10 FERROR
+  BLRB_u10 L1
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L11
+  BLRF_u10 FERROR
+  BLRB_u10 L111
+  BLRF_u10 FERROR
+
+
+L00000a:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRB_u10 L000_TZ
+  BLRB_u10 L00_TZ
+  BLRB_u10 L00_TZ
+  BLRB_u10 L0_TZ
+  BLRF_u10 FFASTER
+  BLRB_u10 L0_TZ
+  BLRB_u10 L0_TZ
+  BLRB_u10 L1_S
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L11_S
+  BLRF_u10 FERROR
+  BLRB_u10 L111_S
+  BLRB_u10 L1111_S
+
+
+L1111111:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000_S
+  BLRB_u10 L000_S
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L0_UZ
+  BLRF_u10 FERROR
+  BLRB_u10 L0_UZ
+  BLRF_u10 FSLOWER
+  BLRF_u10 L1_TY
+  BLRF_u10 FERROR
+  BLRF_u10 FFASTER
+  BLRF_u10 FERROR
+  BLRF_u10 L11_TZ
+  BLRF_u10 L11_TZ
+  BLRB_u10 L111_TZ
+  BLRF_u10 FSLOWER
+
+
+.align 4
+L1_TZ:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r9,r11
+  BRFU L1_T
+.align 4
+L1_TX:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+  BRFU L1_T
+.align 4
+L1_TY:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+L1_T:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000_U
+  BLRB_u10 L000_U
+  BLRF_u10 FERROR
+  BLRB_u10 L00_U
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L1
+  BLRB_u10 L1
+  BLRF_u10 FERROR
+  BLRB_u10 L1
+  BLRB_u10 L11
+  BLRB_u10 L11
+  BLRB_u10 L111
+  BLRF_u10 FERROR
+
+
+L000000_S:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRB_u10 L000_UY
+  BLRB_u10 L00_UX
+  BLRB_u10 L00_UX
+  BLRB_u10 L0_UX
+  BLRF_u10 FERROR
+  BLRB_u10 L0_UX
+  BLRB_u10 L0_UX
+  BLRF_u10 FERROR
+  BLRB_u10 L1_X
+  BLRB_u10 L1_X
+  BLRB_u10 L1_X
+  BLRB_u10 L1_X
+  BLRF_u10 FERROR
+  BLRB_u10 L111_TX
+  BLRF_u10 FERROR
+
+
+.align 4
+L11_TY:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r11,r11
+  BRFU L11_T
+.align 4
+L11_TZ:
+  BITREV r5, r5
+  OUT  r1,r5
+  LADD r5,r6,r8,r9,r11
+  BRFU L11_T
+.align 4
+L11_TX:
+  BITREV r5, r5
+  OUT  r1,r5
+  LSUB r5,r6,r8,r7,r11
+L11_T:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000_U
+  BLRB_u10 L000_U
+  BLRF_u10 FERROR
+  BLRB_u10 L00_U
+  BLRB_u10 L10
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L1
+  BLRB_u10 L1
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L11
+  BLRB_u10 L11
+  BLRB_u10 L111
+  BLRF_u10 FERROR
+
+
+L00000_S:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRB_u10 L000_UY
+  BLRB_u10 L00_UY
+  BLRB_u10 L00_UY
+  BLRB_u10 L0_UX
+  BLRF_u10 FERROR
+  BLRB_u10 L0_UX
+  BLRB_u10 L0_UX
+  BLRB_u10 L1_TX
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L11_TX
+  BLRF_u10 FERROR
+  BLRB_u10 L111_TX
+  BLRF_u10 FERROR
+
+.align 4
+L0000_S:
+.syntax default
+  bf r6, L0000_0
+.syntax architectural
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 L0000000_S
+  BLRB_u10 L000_UY
+  BLRB_u10 L00_UY
+  BLRB_u10 L00_UY
+  BLRB_u10 L0_UY
+  BLRF_u10 FERROR
+  BLRB_u10 L0_UY
+  BLRB_u10 L0_UY
+  BLRB_u10 L1_TX
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L11_TX
+  BLRF_u10 FERROR
+  BLRB_u10 L111_TX
+  BLRB_u10 L111_TY
+
+
+L11111a:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000_S
+  BLRB_u10 L000_S
+  BLRF_u10 FERROR
+  BLRB_u10 L00_S
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L0_S
+  BLRB_u10 L1_TZ
+  BLRB_u10 L1_TZ
+  BLRF_u10 FFASTER
+  BLRB_u10 L1_TZ
+  BLRB_u10 L11_TZ
+  BLRB_u10 L11_TZ
+  BLRB_u10 L111_TZ
+  BLRF_u10 FERROR
+
+
+L0000000_S:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 FERROR
+  BLRB_u10 L000_UX
+  BLRB_u10 L00_UX
+  BLRB_u10 L00_UX
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L0_UX
+  BLRF_u10 FERROR
+  BLRB_u10 L1_X
+  BLRF_u10 FERROR
+  BLRB_u10 L1_X
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+
+
+L0000011_S:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000_UY
+  BLRB_u10 L000_UX
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L10_Y
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L1_Y
+  BLRB_u10 L1_X
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L11_Y
+  BLRB_u10 L11_X
+  BLRB_u10 L111_Y
+  BLRF_u10 FERROR
+
+
+L00011_S:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000_UZ
+  BLRB_u10 L000_UY
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+
+
+L000001_S:
+  IN   r4, r0
+  BRU  r4
+  BLRB_u10 L0000_UY
+  BLRB_u10 L000_UY
+  BLRF_u10 FERROR
+  BLRB_u10 L00_UX
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRF_u10 FERROR
+  BLRB_u10 L1_Y
+  BLRB_u10 L1_Y
+  BLRF_u10 FERROR
+  BLRB_u10 L1_X
+  BLRB_u10 L11_Y
+  BLRB_u10 L11_Y
+  BLRB_u10 L111_Y
+  BLRF_u10 FERROR
+
+FFASTER: BRBU BFASTER
+FSLOWER: BRBU BSLOWER
+FERROR: BRBU BERROR
+.cc_bottom   SpdifReceive.func

@@ -1,0 +1,31 @@
+<?xml version="1.0" ?>
+<xpd>
+    <components></components>
+    <dependency repo = "xcommon">
+        <githash>b7b5be59795a0a4b3fee4aeaff3c8e398bf76d27</githash>
+        <uri>ssh://git@github.com/xcore/xcommon</uri>
+        <version>1.0.0rc2</version>
+    </dependency>
+    <dependency repo = "sc_i2c">
+        <githash>86cb497a5ee519fbc0c4bb597adeeb135d3e97e1</githash>
+        <uri>ssh://git@github.com/xcore/sc_i2c</uri>
+        <version>2.0.0rc3</version>
+    </dependency>
+    <description>S/PDIF Component</description>
+    <docdir>doc</docdir>
+    <location>ssh://git@github.com/xcore/sc_spdif</location>
+    <name>sc_spdif</name>
+    <maintainer>henkmuller</maintainer>
+    <partnumber>XM-001659-DH</partnumber>
+    <release parenthash = "083c65a7f4ba50c5f8b2c87d7bd8455d41520d74" version = "1.2.0beta0" githash = "86fb3fef67ea830f83d7515fafa9400785518b16"></release>
+    <release parenthash = "be73c7f8940a43d6c3b01931bee351f0593de933" version = "1.2.0beta1" githash = "737d315c27a38edb4314e756b65655a2698ec16d bc21d8854cdc668973a0a289f97eb2d85bf32bcd"></release>
+    <release parenthash = "96820e2aa15133b1027b482fa4c0709a69eb08cb" version = "1.2.0rc0" githash = "62a0ce7ddea68f7e2494480b83ea337b154bc1f7"></release>
+    <release parenthash = "4904319a7e60c809e40d04dd31febfd0b40df7ab" version = "1.3.0rc0" githash = "98f9fe592842083d341fdc391e097a0ab1ad0a70"></release>
+    <release parenthash = "f58e7a33601cb7ac04bde5f54bc05e7e1e1c45a3" version = "1.3.0rc1" githash = "899fd113df5cca97837114cd4ff36813eb425aa2"></release>
+    <release parenthash = "c71c7aeacf6f31037608b530a85e51ed49459f20" version = "1.3.0rc2" githash = "04eca3570488bf062d1aa9db2e1175cc08a6142f"></release>
+    <subpartnumber>XM-000050-SW</subpartnumber>
+    <vendor>XMOS</vendor>
+    <xpd_version>1.0</xpd_version>
+    <scope>example</scope>
+    <version>1.3.0rc2</version>
+</xpd>

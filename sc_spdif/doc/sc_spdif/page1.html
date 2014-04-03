@@ -1,0 +1,155 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>S/PDIF Receive &mdash; S/PDIF Software Component v documentation</title>
+
+    <link rel="stylesheet" href=".static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href=".static/framework.css"  type="text/css" />
+    <!--[if lt IE 9]>
+      <link rel="stylesheet" href=".static/xde-ie.css"  type="text/css" />
+    <![endif]-->
+    <!--[if lt IE 8]>
+    <link rel="stylesheet" href=".static/xde-ie7.css"  type="text/css" />
+    <![endif]-->
+    <link rel="stylesheet" href=".static/xde.css"
+    type="text/css" />
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src=".static/jquery.js"></script>
+    <script type="text/javascript" src=".static/underscore.js"></script>
+    <script type="text/javascript" src=".static/doctools.js"></script>
+    <link rel="top" title="S/PDIF Software Component v documentation" href="index.html" />
+    <link rel="next" title="S/PDIF Transmit" href="page2.html" />
+    <link rel="prev" title="SPDIF software" href="page0.html" /> 
+  </head>
+  <body class="indented-content" onload="prepareContents();">
+    <div id="menubar">
+    <div id="breadcrumbs">
+      <ul>
+        
+
+<!--        <li><a href="index.html">S/PDIF Software Component</a></li>-->
+          <li>S/PDIF Receive</li> 
+      </ul>
+    </div>
+    </div>  
+          <div id="body">
+             <div id="content">
+             <h1>S/PDIF Receive</h1>
+
+             <div class='content'>
+            
+  <p>The S/PDIF receive module comprises a single thread that parses data as it
+arrives on a one-bit port and outputs words of data onto a streaming
+channel end. Each word of data carries 24 bits of data and 4 bits of
+channel information.</p>
+<p>This module requires the reference clock to be exactly 100 MHz.</p>
+<h2 class="topic" id="symbolic-constants">Symbolic constants</h2>
+<div><ul class='lib'><li class="macro">
+<h2 id="FRAME_X">
+<tt class="descname">FRAME_X</tt></h2>
+<p>This constant defines the four least-significant bits of the first sample of a frame (typically a sample from the left channel).</p>
+</li>
+
+<li class="macro">
+<h2 id="FRAME_Y">
+<tt class="descname">FRAME_Y</tt></h2>
+<p>This constant defines the four least-significant bits of the second or later sample of a frame (typically a sample from the right channel, unless there are more than two channels).</p>
+</li>
+
+<li class="macro">
+<h2 id="FRAME_Z">
+<tt class="descname">FRAME_Z</tt></h2>
+<p>This constant defines the four least-significant bits of the first sample of the first frame of a block (typically a sample from the left channel).</p>
+</li>
+
+</ul></div><h2 class="topic" id="api">API</h2>
+<div><ul class='lib'><li class="function">
+<h2 id="SpdifReceive">
+void <tt class="descname">SpdifReceive</tt><big>(</big>in buffered port:4<em>&nbsp;p</em>, streaming chanend<em>&nbsp;c</em>, int<em>&nbsp;initial_divider</em>, clock<em>&nbsp;clk</em><big>)</big></h2>
+<p>S/PDIF receive function.</p>
+<p>This function needs 1 thread and no memory other than ~2800 bytes of program code. It can do 11025, 12000, 22050, 24000, 44100, 48000, 88200, 96000, and 192000 Hz. When the decoder encounters a long series of zeros it will lower the divider; when it encounters a short series of 0-1 transitions it will increase the divider.</p>
+<p>Output: the received 24-bit sample values are output as a word on the streaming channel end. Each value is shifted up by 4-bits with the bottom four bits being one of FRAME_X, FRAME_Y, or FRAME_Z. The bottom four bits should be removed whereupon the sample value should be sign extended.</p>
+<p>The function does not return unless compiled with TEST defined in which case it returns any time that it loses synchronisation.</p>
+This function has the following parameters:<ul class="latex_compact"><li><h2>p</h2>
+<p>S/PDIF input port. This port must be 4-bit buffered, declared as <tt class="docutils literal"><span class="pre">in</span> <span class="pre">buffered</span> <span class="pre">port:4</span></tt></p>
+</li>
+<li><h2>c</h2>
+<p>channel to output samples to</p>
+</li>
+<li><h2>initial_divider</h2>
+<p>initial divide for initial estimate of sample rate For a 100Mhz reference clock, use an initial divider of 1 for 192000, 2 for 96000/88200, and 4 for 48000/44100.</p>
+</li>
+<li><h2>clk</h2>
+<p>clock block sourced from the 100 MHz reference clock.</p>
+</li>
+</ul>
+</div></li>
+
+</ul></div><h2 class="topic" id="example">Example</h2>
+<div><p>An example program is shown below. An input port and a clock block must be
+declared. Neither should be configured:</p>
+<pre>
+#include &lt;xs1.h&gt;
+#include "SpdifReceive.h"
+
+buffered in port:4 oneBitPort = XS1_PORT_1F;
+clock clockblock = XS1_CLKBLK_1;
+
+</pre>
+<p>All data samples are being received on a streaming channel, after being
+parsed by the receive process. After reading a sample value from the
+channel, it must be converted to a signed sample value whilst removing the
+tag identifying the channel information. In this example, we perform this
+operation by masking off the bottom four bits and shifting the sample-data
+into the most significant 24-bits, ready to be used on, for example, I2S:</p>
+<pre>
+void handleSamples(streaming chanend c) {
+    int v, left, right;
+    while(1) {
+        c :&gt; v;
+        if((v & 0xF) == FRAME_Y) {
+            right = (v & ~0xf) &lt;&lt; 4;
+            // operate on left and right
+        } else {
+            left = (v & ~0xf) &lt;&lt; 4;
+        }
+    }
+}
+
+</pre>
+<p>The main program in this example simply starts the S/PDIF receive thread,
+and the data handling thread in parallel:</p>
+<pre>
+int main(void) {
+    streaming chan c;
+    par {
+        SpdifReceive(oneBitPort, c, 1, clockblock);
+        handleSamples(c);
+    }
+    return 0;
+}
+
+</pre>
+</div>
+
+             </div>
+             </div>
+          </div>
+    <div class="footer">
+    </div>
+  </script>
+  </body>
+</html>

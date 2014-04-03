@@ -1,0 +1,7 @@
+# This file describes how a module is published into a package.
+
+# The current version of the module
+VERSION = 1v1
+
+# The licensing terms of the module e.g. FREE, XMOS_UNSPECIFIC
+LICENSE = FREE

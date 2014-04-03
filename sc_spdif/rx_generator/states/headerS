@@ -1,0 +1,189 @@
+/////////////////////////////////////////////////////////////////////////////
+//
+// Outputs 32-bit words of data
+// Only works down to 396MHz (see explanation below)
+//
+// This is an SPDIF receiver. It needs 1 thread and no memory other
+// than ~2800 bytes of program code. It can do 11025, 12000, 22050, 24000,
+// 44100, 48000, 88200, 96000, and 192000.
+//
+// Its "elegance" is in the implementation method. The signal is sampled at
+// 50 Mhz (assuming 192000, which is 12 Mbps), and the bits that come in are
+// used to drive a parser. I gratuitously used assembly (all machine generated)
+// in order to build a state machine that goes through 5 steps:
+// 1) IN 4 seralised bits from the SPDIF PHY
+// 2) BRU to these bits (that is, add the value inputted to the program counter)
+// 3) BL to the code that deals with the state transition
+// 4) Perform an LMUL to add 0/1  bits to the received word
+// 5) IN the next 4 serialised bits.
+// 6) If an error is encountered, then up a binary counter on the leds and
+// record the erroneous part of the stream.
+//
+// The program needs 40-60 ns to deal with 4 samples, and 80-100 ns to deal
+// with the final sample which limits the speed to 12 Mbps or 192,000 samples/s
+// stereo. There are around 80 states, each with a 16-long jumptable.
+//
+// The bit streams are 3.072, 6.144, or 12.288 Mbits/s - we sample them at
+// 12.5, 25, or 50 MHz.
+// So we get "4.something" samples per bit.
+//
+// Normally samples 0000/1111 mean '0' and 0011/1100 mean '1'. Any other value
+// means 'Error'. However, since it is slightly more than 4, it could be '00000'
+// rather than '0000'. Hence, if you sample four bits at a time, you slowly go
+// out of sync. The code implements a state machine; state '000' means 'I have
+// seen three zeros that I haven't decided what to do with' So if you then
+// read samples '0111' then you know that you have seen a logical '0' (0000),
+// and you go to state '111' because there are still three ones to deal with.
+// So, if your clock is too low, you will sample sometimes only 3 times per bit,
+// and you are toast. You can run it at, say, 360 Mhz, but you will have to
+// divide the clock by 7 to get a 51.4 MHz clock... Or divide the 90 Mhz clock
+// by 3 to get a 30 MHz clock that can sample 96 KHz. There is also a subtlety
+// that rise and fall times are not equal, and hence '0111' and '1110' are
+// actually ones.
+#include <xs1.h>
+
+.syntax architectural
+
+#define STACK  9
+    .globl   SpdifReceive
+.linkset SpdifReceive.nstackwords,STACK
+.globl   SpdifReceive.nstackwords
+.linkset SpdifReceive.maxthreads,0
+.globl   SpdifReceive.maxthreads
+.linkset SpdifReceive.maxtimers,0
+.globl   SpdifReceive.maxtimers
+.linkset SpdifReceive.maxchanends,0
+.globl   SpdifReceive.maxchanends
+.globl   parseSpDifc
+.linkset parseSpDifc.nstackwords,0
+.globl   parseSpDifc.nstackwords
+
+.cc_top   SpdifReceive.func, SpdifReceive
+
+BERROR:
+  STWSP    lr, 8
+  BLRF parseSpDifE
+  
+parseSpDifTerminate:
+    INCT   r11, r1
+#ifdef TEST
+parseSpDifE:
+#endif
+    CLRSR  XS1_SR_EEBLE_MASK
+    CLRSR  XS1_SR_FAST_MASK
+    EDU    r1
+    OR     r0, r4, r4
+    OR     r1, r5, r5
+    LDWSP  r2, 8
+    LDWSP  r4, 1
+    LDWSP  r5, 2
+    LDWSP  r6, 3
+    LDWSP  r7, 4
+    LDWSP  r8, 5
+    LDWSP  r9, 6
+    LDWSP  r10, 7
+    RETSP  STACK
+
+
+
+    // Parse SPDIF entry point
+
+    // arguments:
+    //   void SpdifReceive(
+    //     in buffered port:4 p     r0
+    //     streaming chanend c      r1
+    //     int initial_divider      r2
+    //     clock clk                r3
+    //   );
+
+SpdifReceive:
+    //LDC     r4, 0xf
+    //AND     r4, r3, r4
+    //BRFT    r4, parseSpDifc
+    SETCI   r3, 7   // XS1_SETC_RUNR_STOP
+    SETD    r3, r2
+    SETCLK  r0, r3
+    SETCI   r3, 15  // XS1_SETC_RUNR_START
+#ifdef INV
+    SETCI   r0, 0x600F  // invert
+#endif
+    SETSR  XS1_SR_FAST_MASK
+parseSpDifc:
+    ENTSP STACK
+    STWSP   r4, 1
+    STWSP   r5, 2
+    STWSP   r6, 3
+    STWSP   r7, 4
+    STWSP   r8, 5
+    STWSP   r9, 6
+    STWSP   r10, 7
+    CLRSR   XS1_SR_EEBLE_MASK
+    EDU     r1
+.syntax default
+    ldap    r11, parseSpDifTerminate
+    setv    res[r1], r11
+.syntax architectural
+    EEU     r1
+    SETSR   XS1_SR_EEBLE_MASK
+
+    BLRF startParsing
+
+    // Entry points for slowing down and speeding up
+    
+BFASTER:
+#ifndef TEST
+    GETD r4, r3
+  SHRI r4, r4, 1
+  BRFT r4, setClock
+    BLRF startParsing
+#endif
+BSLOWER:
+#ifndef TEST
+  GETD r4, r3
+  SHLI  r4, r4, 1
+  LDC r6, 32
+  LSU  r10, r4, r6
+  BRFF r10, startParsing
+setClock:
+  SETCI r3, 7
+  SETD r3, r4
+  SETCI r3, 15
+#endif
+  BLRF startParsing
+
+
+    
+startParsing:    
+  LDC r5, 0x5555
+  LDC r6, 0x0
+  LDC r7, 0x1
+  LDC r8, 0x1A
+  LDC r9, 0x2
+  LDC r10, 0x4
+  LDC r11, 0x0
+#ifndef TEST
+parseSpDifE:
+#endif
+  IN   r4, r0
+  IN   r4, r0
+  SHLI r4, r4, 1
+  BRU  r4
+  BLRF_lu10 L0000
+  BLRF_lu10 L000
+  BLRF_lu10 L00
+  BLRF_lu10 L00
+  BLRF_lu10 L0
+  BLRF_lu10 L0
+  BLRF_lu10 L0
+  BLRF_lu10 L0
+  BLRF_lu10 L1
+  BLRF_lu10 L1
+  BLRF_lu10 L1
+  BLRF_lu10 L1
+  BLRF_lu10 L11
+  BLRF_lu10 L11
+  BLRF_lu10 L111
+  BLRF_lu10 L1111
+  
+
+

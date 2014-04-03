@@ -1,0 +1,139 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<!--XDE partnum="XM-002775-SM" version="6.1.0rc3"-->
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>XMOS USB Audio 2.0 Reference Design Readme &mdash; XMOS USB Audio 2.0 Reference Design Readme v documentation</title>
+
+    <link rel="stylesheet" href=".static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href=".static/globals.css"  type="text/css" />
+    <link rel="stylesheet" href=".static/ui.css" type="text/css" />
+    <link rel="stylesheet" href=".static/app.css"  type="text/css" />
+    <link rel="stylesheet" href=".static/mobile.css"  type="text/css" />
+    <link rel="stylesheet" href=".static/xde.css"
+    type="text/css" /><script type="text/javascript" src=".static/scripts.js"></script>
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src=".static/jquery.js"></script>
+    <script type="text/javascript" src=".static/underscore.js"></script>
+    <script type="text/javascript" src=".static/doctools.js"></script>
+    <link rel="top" title="XMOS USB Audio 2.0 Reference Design Readme v documentation" href="#" />
+    <link rel="next" title="XMOS USB Audio 2.0 Reference Design Change Log" href="changelog.html" /> 
+  </head>
+  <body class="xde indented-content" onload="prepareContents();">  
+          <div id="body">
+             <div id="content">
+             <h1>XMOS USB Audio 2.0 Reference Design Readme</h1>
+
+             <div class='columns'>
+            
+  <ul class="field_list"><li><h2>Version</h2>
+<p><p>6.1.0rc3</p>
+</p>
+</li>
+<li><h2>Vendor</h2>
+<p><p>XMOS</p>
+</p>
+</li>
+<li><h2>Description</h2>
+<p><p>USB Audio Applications</p>
+</p>
+</li>
+</ul>
+<p>Welcome to version 6 of the XMOS USB Audio software framework.</p>
+<p>The main feature of version 6 of the XMOS USB Audio software framework and associated applications is to add support
+for the latest U series of devices now available from XMOS.  This release supports the previous L devices, however, there is no
+need to update to this version unless a specific issues is solved by this release.  Please see CHANGELOG.rst for detailed
+change listing.</p>
+<p>For full software documentation please see the USB Audio Software Design Guide document available from xmos.com.</p>
+<p>This release is built and tested using version 12 of the XMOS toolset.</p>
+<p>This repository contains applications (or instances) of the XMOS USB Audio Reference Design framework.  These applications
+typically relate to a specific board.  This repository contains the following:</p>
+<p>Please refer to individual README files in these apps for more detailed information.</p>
+<p>Each application contains a &#8220;core&#8221; folder, this folder contains items that are required to use and run the USB Audio
+application framework.  Mandatory files per application include:</p>
+<ul>
+<li>An XN file describing the board including required port defines. The XN file is referenced in the application makefile.</li>
+<li>customdefines.h header file containing configuration items such as channel count, strings etc.</li>
+<li>ports.h header file containing declarations of ports that the application uses in addition to the ports in the XN file.</li>
+</ul>
+<p>Each application also contains an &#8220;extensions&#8221; folder which includes board specific extensions such as CODEC
+configuration etc.</p>
+<p>Additionally some options are contained in Makefiles for building multiple configurations of an application. For example
+app_usb_aud_l1 builds a MIDI and a S/PDIF configuration.  See the USB Audio Software Design Guide for full details.</p>
+<h2 class="topic" id="key-framework-features">Key Framework Features</h2>
+<div><p>Key features of the various applications in this repositiry are as follow.  Please refer to the application README for application
+specific feature set.</p>
+<ul>
+<li>USB Audio Class 1.0/2.0 Compliant</li>
+<li>Fully Asynchronous operation</li>
+<li>Support for the following sample frequencies: 44.1, 48, 88.2, 96, 176.4, 192kHz</li>
+<li>Input/output master/channel volume/mute controls supported</li>
+<li>Field firmware upgrade compliant to the USB Device Firmware Upgrade (DFU) Class Specification</li>
+<li>S/PDIF Output</li>
+<li>S/PDIF Input</li>
+<li>ADAT Input</li>
+<li>MIDI input/output (Compliant to USB Class Specification for MIDI devices)</li>
+<li>Mixer with flexible routing</li>
+</ul>
+<p>Note, not all features may be supported at all sample frequencies, chips etc.</p>
+</div><h2 class="topic" id="known-issues">Known Issues</h2>
+<div><p>General known issues are as follows.  For board/application specific known issues please see README in relevant app directory.</p>
+<ul>
+<li>Windows XP volume control very sensitive.  The Audio 1.0 driver built into Windows XP (usbaudio.sys) does not properly support master volume AND channel volume controls, leading to a very sensitive control.  Descriptors can be easily modified to disable master volume control if required (one byte - bmaControls(0) in Feature Unit descriptors)</li>
+<li>88.2kHz and 176.4kHz sample frequencies are not exposed in Windows control panels.  This is due to known OS restrictions.</li>
+</ul>
+</div><h2 class="topic" id="host-system-requirements">Host System Requirements</h2>
+<div><ul>
+<li>Mac OSX version 10.6 or later</li>
+<li>Windows XP, Vista or 7 with Thesycon Audio Class 2.0 driver for Windows (contact XMOS for details)</li>
+</ul>
+</div><h2 class="topic" id="in-field-firmware-upgrade">In Field Firmware Upgrade</h2>
+<div><p>The firmware provides a DFU interface compliant to the USB DFU Device Class.  An example host application is provided for OSX.  See README in example application for usage.  The Thesycon USB Audio Class 2.0 driver for Windows provides DFU functionality and includes an example application.</p>
+</div><h2 class="topic" id="required-software-dependencies">Required software (dependencies)</h2>
+<div><blockquote>
+<div><ul>
+<li>sc_ios</li>
+<li>sc_usb</li>
+<li>sc_spdif</li>
+<li>sc_usb_audio</li>
+<li>xcommon (if using development tools earlier than 11.11.0)</li>
+<li>sc_xud</li>
+<li>sc_i2c</li>
+</ul>
+</div></blockquote>
+</div><h2 class="topic" id="support">Support</h2>
+<div><blockquote>
+<div><p>This package is support by XMOS Ltd. Issues can be raised against the software
+at:</p>
+<blockquote>
+<div><p><a class="reference" href="http://www.xmos.com/support"><span>http://www.xmos.com/support</span></a></p>
+</div></blockquote>
+</div></blockquote>
+</div>
+
+             </div>
+             </div>
+
+
+          </div>
+
+          <div>
+             <!--seealsos-->
+          </div>
+    <div class="footer">
+    </div>
+  </body>
+</html>

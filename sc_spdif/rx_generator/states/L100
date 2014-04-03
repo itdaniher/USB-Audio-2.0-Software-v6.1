@@ -1,0 +1,30 @@
+.align 4
+L100_CHOICE:
+.syntax default
+  bt r6, L00_TZ
+.syntax architectural
+L100_0:
+  LMUL r6, r5, r11, r11, r5, r5
+  BRFU L100
+.align 4
+L100_1:
+  LMUL r6,r5,r5,r7,r5,r7
+L100:
+  IN   r4, r0
+  BRU  r4
+  BLRF_u10 ERROR
+  BLRF_u10 ERROR
+  BLRB_u10 L100_1
+  BLRF_u10 L1100_1
+  BLRF_u10 ERROR
+  BLRF_u10 FASTER
+  BLRF_u10 L110_1
+  BLRF_u10 L1110_1
+  BLRF_u10 ERROR
+  BLRF_u10 ERROR
+  BLRF_u10 ERROR
+  BLRF_u10 ERROR
+  BLRF_u10 ERROR
+  BLRF_u10 ERROR
+  BLRF_u10 L111_1
+  BLRF_u10 L1111_1
